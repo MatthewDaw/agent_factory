@@ -43,6 +43,20 @@ org (it holds unrelated test data).
 Prefer shaping facts and using `add_insight` over `ingest` wherever practical — it avoids
 both the latency and the distillation loss.
 
+**Conflict mode (`on_conflict`) — choose deliberately:**
+- `on_conflict="surface"` — a detected contradiction is **surfaced, not resolved**: both facts
+  kept (incumbent `active`, newcomer `proposed`, neither rejected), a pending pair appears in
+  `praxis_get_contradictions` with a `pair_id`, settled by `praxis_resolve_contradiction`. **Use
+  this whenever a human should adjudicate** — all of plan-hardening, and any write where losing a
+  fact silently would be wrong.
+- `on_conflict="auto_resolve"` (the default) — newest wins, loser silently → `rejected`, nothing
+  flagged. Only use when you *intend* a confirmed overwrite (e.g. superseding a known-stale learning).
+
+**Write timeouts are false negatives.** A conflict-checked write runs an inline semantic-judge LLM
+call and can time out *client-side after the write already succeeded*. On any write timeout, **read
+back** (`praxis_list_graph` / `praxis_get_context`) to confirm before retrying — blind retry creates
+duplicates. Log a `note` event recording the timeout + read-back result.
+
 ## 2. Tabular ingestion integrity (the H6 audit) — REQUIRED on any table/bulk write
 
 Loss happens at two points: distillation under-emits rows (A), and the deduper over-merges
@@ -78,9 +92,10 @@ siblings (B). A is shimmed locally; B is server-side and can only be *caught*, n
   facts; that poisons the pool.
 - Promote a project-pool learning into the **general pool** only when it generalizes beyond
   the one project.
-- On a write, if Praxis flags a **contradiction**, do not force it through silently — inspect
-  with `praxis_get_contradictions` and settle with `praxis_resolve_contradiction` (keep one
-  side or supply reconciled text). Record the resolution as a `decision` event.
+- Write with `on_conflict="surface"` so a contradiction is **surfaced** rather than silently
+  overwriting — inspect with `praxis_get_contradictions` and settle with
+  `praxis_resolve_contradiction` (keep one side or supply reconciled text). Record the resolution
+  as a `decision` event.
 - Attach outcome context from the event log so future milestones can weight facts by how they
   fared (local stand-in for Praxis gaps H1/H4/H5).
 

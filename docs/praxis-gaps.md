@@ -119,19 +119,24 @@ with the defaults.
 correctness hole, but a latency constraint the local loop must design around.
 → *Praxis improvement (nice-to-have):* faster/confirmable writes; *meanwhile* local staging.
 
-### H9. No "detect-without-auto-resolve" write mode — **HOLE (verified live)**
-The plan-hardening loop needs contradictions **surfaced for a human**, not silently settled. But
-verified against the live MCP: `praxis_add_insight` **auto-resolves** every conflict — newest fact
-wins, loser → `rejected`, and **nothing appears in `praxis_get_contradictions`**. (`insert_fact`
-goes the other way: it bypasses conflict detection entirely.) There is no MCP toggle for
-"detect the contradiction and surface it without resolving."
-- *Test that proved it:* added "default rate limit is 100 rps" then "...500 rps"; 500 went active,
-  100 went `rejected`, `get_contradictions` empty.
-→ *Praxis improvement:* an auto-resolution-off / surface-only ingest mode (and have such conflicts
-  appear in `/contradictions`).
-→ *Workaround (in use):* treat the **rejected pile as the contradiction surface** — after each
-  write batch, audit `state="rejected"` and re-surface any just-submitted fact that landed there as
-  a paired diff for the human. The `factory-plan` skill is built on this.
+### H9. Detect-without-auto-resolve write mode — **RESOLVED (Praxis fix verified 2026-06-25)**
+The plan-hardening loop needs contradictions **surfaced for a human**, not silently settled.
+Originally `add_insight` auto-resolved every conflict (newest wins, loser → `rejected`, nothing in
+`get_contradictions`). **Fixed in Praxis:** `add_insight`/`ingest` now take
+`on_conflict="surface" | "auto_resolve"` (default `auto_resolve`). With `surface`, a conflict keeps
+both facts (incumbent `active`, newcomer `proposed`, neither rejected) and raises a **pending pair
+in `get_contradictions`** settled by `resolve_contradiction`.
+- *Verified live:* `retry count is 3` then `...7` with `on_conflict="surface"` → both kept (3 active,
+  7 proposed), one pending pair, neither rejected; `resolve_contradiction(keep_id=7)` superseded 3.
+- *Consequence:* the earlier rejected-pile workaround is **retired**; `factory-plan`/`factory-memory`
+  now use `on_conflict="surface"` + `get_contradictions` as the surface.
+
+### H10. Semantic-contradiction precision — **IMPROVED (Praxis fix verified 2026-06-25)**
+The semantic detector over-flagged compatible facts (e.g. "knowledge is stored in the KG" vs "code
+is never in the KG"). Tightened in Praxis; the pair now coexists with no contradiction. Eval case
+`praxis/.../matt/semantic_no_conflict_storage_target` pins it. *Note:* the conflict-checked write
+runs an inline semantic-judge LLM call and can **time out client-side after the write succeeds** —
+consumers must read back rather than blind-retry (handled in `factory-memory`).
 
 ---
 

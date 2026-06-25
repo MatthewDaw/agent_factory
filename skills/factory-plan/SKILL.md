@@ -46,15 +46,16 @@ Then run the tenancy lifecycle through `factory-memory`:
 3. **Mount read-only** the reference snapshots: `planning-knowledge` (general conventions),
    `constitution` (invariants, if it exists), and any relevant prior `prd-<project>` or research
    snapshot. Mounted facts inform retrieval but never enter the PRD snapshot.
-4. Ingest the source PRD/idea into the live graph (tabular content via the linearizer).
+4. Write each settled requirement with **`add_insight(..., on_conflict="surface")`** (tabular
+   content via the linearizer first). Surface mode is mandatory during planning.
 
-**Verified Praxis behavior (important):** `add_insight` **auto-resolves** conflicts silently —
-the newest fact wins, the loser is moved to `rejected`, and **nothing is flagged in
-`get_contradictions`**. There is no MCP toggle to turn auto-resolution off (Praxis gap **H9**).
-So the **rejected pile IS the contradiction surface**: after every write batch, audit
-`praxis_list_graph(state="rejected")`, and treat any fact you *just submitted* that landed
-rejected as a **surfaced conflict** to bring to the human — do not assume a clean
-`get_contradictions` means a consistent plan.
+**Verified Praxis behavior (2026-06-25):** with `on_conflict="surface"`, a detected contradiction
+is **surfaced, not auto-resolved** — both facts are kept (incumbent stays `active`, newcomer lands
+`proposed`, **neither rejected**) and a **pending pair appears in `praxis_get_contradictions`** with
+a resolvable `pair_id`. The human settles it with `praxis_resolve_contradiction(pair_id, keep_id |
+custom_text)`. (Without the flag, `add_insight` defaults to `auto_resolve` — newest wins, loser
+silently → `rejected`, nothing flagged — which is wrong for planning. Always pass
+`on_conflict="surface"`.) The earlier rejected-pile workaround for gap H9 is **retired**.
 
 ## Step 2 — The hardening loop
 
@@ -80,17 +81,16 @@ rigorous mode, each gap-lens must explicitly **fire-or-pass** (logged): failure-
 data-lifecycle, rollback, who-pays-the-tradeoff. Use leading yes/no questions ("so you have NOT
 specified what happens on empty input — correct?") to corner vagueness into concrete gaps.
 
-**d. KG self-consistency.** The surface is the **rejected pile**, not `get_contradictions` (see
-Verified Praxis behavior above). After admitting a batch, audit `praxis_list_graph(state="rejected")`;
-for each fact you just submitted that landed rejected, present a **paired diff** — the active
-"winner" vs. the rejected "loser" ("Req A: sessions expire in 24h / Req C: sessions are
-persistent") — with resolve / keep-the-rejected (`promote`/`edit`) / keep-both-by-rewording
-actions. The human decides; you never let the silent auto-resolution stand unreviewed. Also check
-`get_contradictions` for any pairs that *do* surface. Reuse the same machinery as an **oracle**:
-to check a requirement against a mounted `constitution` invariant, dependency/spec-registry fact,
-or research-evidence fact, the conflict shows up the same way (the violating fact lands rejected
-against the mounted truth, or vice versa) — inspect provenance on the pair to tell which side is
-the invariant.
+**d. KG self-consistency.** Because writes use `on_conflict="surface"`, the surface is
+**`praxis_get_contradictions`** — the proper queue. After admitting a batch, read it and present
+each pending pair as a **paired diff** ("Req A: sessions expire in 24h / Req C: sessions are
+persistent"). The human settles each with `praxis_resolve_contradiction(pair_id, keep_id |
+custom_text)` — keep one side, or supply reconciled text. You never settle it yourself. Reuse the
+same machinery as an **oracle**: a requirement that conflicts with a mounted `constitution`
+invariant, dependency/spec-registry fact, or research-evidence fact surfaces as the same kind of
+pending pair — inspect provenance/`source` on each side to tell which is the invariant vs. the new
+requirement. (Belt-and-suspenders: also glance at `praxis_list_graph(state="rejected")` in case a
+write slipped through on `auto_resolve` — but with surface mode the pending queue is the surface.)
 
 ## Step 3 — The done-gate (the human clears it; you only report)
 
@@ -127,9 +127,10 @@ Before finishing, with the human:
 
 ## Never
 - Never autonomously author or approve the plan, or declare the gate cleared.
-- Never let Praxis's silent auto-resolution stand unreviewed — audit the rejected pile every batch
-  and surface each just-rejected submission to the human (a clean `get_contradictions` is NOT proof
-  of consistency; gap H9).
+- Never write a planning fact without `on_conflict="surface"` — `auto_resolve` silently rejects the
+  loser and hides the conflict.
+- Never treat a write timeout as a failure — the write usually landed; **read back** (`list_graph` /
+  `get_context`) before retrying, or you'll create duplicates (see `factory-memory`).
 - Never `clear_graph` without a confirmed save-before-clear snapshot.
 - Never admit a requirement with no acceptance condition and no owned-decision/deferred tag.
 - Never let mounted reference knowledge leak into the `prd-<project>` snapshot.
