@@ -43,7 +43,7 @@ poses as a hardened one.
 Then run the tenancy lifecycle through `factory-memory`:
 1. **Save-before-clear** (guardrail — never `clear_graph` without a confirmed snapshot of live state).
 2. `clear_graph` → clean live scratch.
-3. **Mount read-only** the reference snapshots: `planning-knowledge` (general conventions),
+3. **Mount read-only** the reference snapshots: `general-pool` (general conventions),
    `constitution` (invariants, if it exists), and any relevant prior `prd-<project>` or research
    snapshot. Mounted facts inform retrieval but never enter the PRD snapshot.
 4. Write each settled requirement with **`add_insight(..., on_conflict="surface")`** (tabular
@@ -68,7 +68,7 @@ decision/fork to the human until you have first tried to answer it from existing
 order:
 1. **The PRD / source text** — re-read the relevant section. If it specifies the answer, use it
    and cite the line; do **not** ask.
-2. **Mounted knowledge** — query `get_context` against `planning-knowledge`, `constitution`, and
+2. **Mounted knowledge** — query `get_context` against `general-pool`, `constitution`, and
    any mounted prior `prd-<project>`. If an existing fact/invariant answers it, use it; do not ask.
 3. **Conventional default** — if the PRD is *silent* and there is a clear, low-regret conventional
    default (e.g. streak resets to 0 on a miss; DST uses local wall-clock), **take the default**,
@@ -89,7 +89,7 @@ carries ≥1 **binary acceptance condition** ("when X, the system does Y, observ
 the candidate condition; the human accepts/edits/rejects. When an answer uses a vague term
 ("fast", "secure", "most users"), don't accept it — offer multiple-choice disambiguations
 (`p95 < 200ms` / `p99 < 1s` / "feels instant in demo") that mint the testable fact. Keep a small
-library of ambiguity examples in `planning-knowledge` and grow it (Step 4).
+library of ambiguity examples in `general-pool` and grow it (Step 4).
 
 **c. Adversarial pass (a skeptic must challenge).** For each requirement, file ≥1 falsifiable
 challenge — missing actor, unbounded condition, hidden dependency, unhandled empty/error case —
@@ -129,7 +129,7 @@ editing later = `load_snapshot(... replace)` → edit → re-save.
 ## Step 4 — Compound (improve the tool)
 
 Before finishing, with the human:
-- Append any new ambiguity patterns the session caught to the `planning-knowledge` ambiguity-example library.
+- Append any new ambiguity patterns the session caught to the `general-pool` ambiguity-example library.
 - Offer to **promote** genuinely-new cross-project invariants into the `constitution` snapshot.
 - Write **decision + derivation records** to the event log (why each threshold/decision, derived
   from which fact/source) — the local fill for Praxis gaps H4/H5.

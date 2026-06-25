@@ -25,11 +25,17 @@ a fresh session, run `praxis_whoami`; if the active org is not `agent-factory`, 
 `praxis_select_org("agent-factory")`. Never write factory knowledge into the `praxis`
 org (it holds unrelated test data).
 
-- **General pool** = the org's **live graph** (cross-project conventions and learnings).
-- **Project pool** = a **snapshot** (`praxis_save_snapshot`), **mounted read-only**
-  (`praxis_mount_snapshot`) while working so retrieval composes general + project without
-  merging the project into the live graph. Single-principal tenancy means there is **no**
-  per-project user_id — snapshots and mounts are the partition primitive.
+- **Durable knowledge = named snapshots; the live graph = scratch.** `save_snapshot` captures the
+  *whole* live graph, so durable pools are kept as named snapshots and the live graph is only the
+  current session's working set. Compose reference knowledge with read-only **`mount`** (read
+  without merging into live or its saves), never by keeping it live.
+- **`general-pool`** — the durable cross-project conventions + learnings (incl. planning
+  conventions and the ambiguity-example library). Mounted read-only by plan and execution alike.
+- **Project pool** — each project is its own snapshot (`prd-<project>`), built during plan-hardening
+  and mounted read-only during execution.
+- Single-principal tenancy means there is **no** per-project user_id — snapshots + mounts are the
+  partition primitive. **`mount`** = read-only compose; **`load`** = merge into live (only to edit
+  a snapshot in place, then re-save).
 
 ## 1. Choose the write path
 
@@ -63,6 +69,24 @@ write can time out *client-side after the row already committed* (gap H13.1). On
 2. If it **did** land → done; do **not** retry (blind retry creates duplicates).
 3. If it **did not** → re-add it (singly).
 Log a `note` event recording the timeout + the read-back outcome either way.
+
+## 1b. Decisions & episodes (the *why*, not just the *what*)
+
+When the factory makes a non-obvious choice (chose library X; defaulted Y because the PRD was
+silent), record it as a **decision/episode** — the rationale that should compound and be traceable,
+kept separate from semantic facts so it doesn't pollute task-grounding retrieval.
+
+- **Target convention (Praxis H4, in flight):** an episode = a fact written with
+  `category="episodic"` + a `meta.episode` blob {decided_at, alternatives, outcome} + `derived_from`
+  edges to its basis facts; `record_episode(...)` is the helper. Episodes are append-only — never
+  deduped/merged/superseded.
+- **Interim (until H4 + H12 land):** `category`/`meta` aren't honored on writes yet (H12), so for
+  now write the decision as a normal `add_insight` whose **text carries the rationale** ("Chose
+  reset-to-0 because the PRD was silent; alternatives were carry-over / no-reset"), and **also**
+  log it as a `decision` event in the event log (the local, reliable record). Don't depend on a
+  queryable episodic surface in Praxis yet.
+- Once H4/H12 ship, switch to `record_episode` / `category="episodic"`; the event-log decision
+  records are what backfill it.
 
 ## 2. Tabular ingestion integrity (the H6 audit) — REQUIRED on any table/bulk write
 
