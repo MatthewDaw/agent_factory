@@ -34,8 +34,18 @@ task+oracle seam, runnable as long unattended sessions with confidence-gated par
 - **Dedicated `agent-factory` org; partition by snapshots/mounts, not principals.** Verified
   against the live MCP: a Cognito login is a **single principal**, so the earlier
   "per-project principal (distinct user_id)" partition is **not achievable** via MCP. The factory
-  runs in its own clean org (`agent-factory`); the live graph is the working/general pool, and
-  **projects are partitioned with snapshots + read-only mounts** within that org.
+  runs in its own clean org (`agent-factory`).
+- **Durable knowledge = named snapshots; the live graph = scratch.** Because `save_snapshot`
+  captures the *entire* live graph, the only way to mint a clean PRD-only snapshot is to author
+  it in an otherwise-empty live graph. So every durable pool — `general-pool` (a.k.a. planning
+  knowledge), each `prd-<project>`, learnings packs — is a **named snapshot**, and the live graph
+  is just the current session's working set. You **`mount`** the snapshots you need (read-only,
+  composed at read time, never merged into live or carried into a save) and **save** back to the
+  appropriate snapshot. `mount` is "read without loading"; `load` (merge into live) is reserved
+  for editing a snapshot in place.
+- **Planning is human-controlled.** The factory does **not** autonomously author or approve
+  plans. Its planning job is to pressure-test for completeness, research, and enforce
+  self-consistency via the KG. Autonomy lives in *execution*, not planning.
 
 ## Build sequence rationale
 
@@ -52,28 +62,65 @@ generalize the seam and add unattended parking. Each milestone is shippable and 
 
 - Praxis MCP wired into the plugin; confirm identity/tenancy with `praxis_whoami`. ✅ done —
   connected, logged in as `mattdaw7@gmail.com`, dedicated `agent-factory` org created (empty).
-- **Tenancy setup:** the `agent-factory` org's **live graph is the general pool**; each
-  **project pool is a snapshot** (saved/mounted), since a single MCP principal rules out
-  per-project user_ids. Document how a new project gets seeded into and mounted from a snapshot.
-- **Access-policy skill** (the "port"): rules for `insight` vs `ingest`, retrieval conventions,
-  and the **ingestion-integrity audit** (linearize tabular input + check the rejected pile).
+- **Tenancy setup:** durable pools are **named snapshots** (`general-pool` / planning knowledge,
+  per-project `prd-<project>`, learnings), the **live graph is scratch**, and reference knowledge
+  is composed with **`mount`** (read-only). Document the save-back and mount conventions.
+- **Save-before-clear guardrail.** `clear_graph` truncates the live graph; the access-policy
+  skill must save the live graph to a snapshot before any clear. (Immediate bootstrap: the 6 M0
+  seed facts are currently live and **unsnapshotted** — save them to `general-pool` first.)
+- **Access-policy skill** (the "port"): `insight` vs `ingest` routing, the **ingestion-integrity
+  audit** (linearize tabular input + check the rejected pile), retrieval conventions, mount/save
+  rules, and **auto-resolution OFF** during planning so contradictions surface instead of being
+  silently rejected. ✅ skill drafted (`skills/factory-memory/`).
 - **Event log** as the compounding spine: an append-only structured record of decisions, tool
   calls, gate results, outcomes — the local source for outcome/episodic/derivation data Praxis
-  doesn't store (gaps H1/H4/H5). (Open: own log vs. derive from session transcripts — decide here.)
+  doesn't store (gaps H1/H4/H5). ✅ built (`src/agent_factory/event_log.py`); own structured log
+  (not transcript-derived).
 
-**Covers:** R12, R13. **Exit:** a trivial task seeds the project pool, is retrievable via Praxis,
-and produces a complete event-log trace; the rejected-pile audit runs on a tabular input.
+**Covers:** R12, R13. **Exit:** general pool saved as a snapshot; a project snapshot can be
+minted, mounted, and retrieved against; the rejected-pile audit runs on tabular input; every run
+leaves a complete event-log trace. **Status:** done except the live snapshot/mount round-trip
+(blocked on a local Praxis backend restart).
 
-## Milestone 1 — Minimal coding loop (first task type)
+## Milestone 1 — Plan-hardening + minimal coding loop
 
-**Goal:** plan → execute → verify on a single coding task, fully autonomous.
+**Goal:** a human-controlled planning loop that produces a self-consistent, fully-spec'd
+`prd-<project>` snapshot, then a fully-autonomous plan → execute → verify loop on a single coding
+task that consumes it.
 
-- **Plan skill:** PRD/spec → task DAG; each node carries a binary acceptance condition (and a
-  precondition check). Seed the project pool through the access-policy skill.
-- **Execute:** the single agent (Claude Code) does the task, pulling grounding context from
-  Praxis via MCP.
+### M1a — Plan skill (human-controlled hardening loop, NOT an autonomous planner)
+
+The human drives the plan; the factory **pressure-tests, researches, and enforces
+self-consistency via the KG**. It never authors or approves the plan itself — it reports what's
+inconsistent or under-specified and the human clears the gate.
+
+Planning-session lifecycle:
+1. **Save-before-clear**, then `clear_graph` → clean live scratch.
+2. **`mount` the planning-knowledge snapshot** (`general-pool`) read-only — fixed reference that
+   stays out of the PRD.
+3. **Author/iterate the PRD in the live graph** — human-driven. The factory researches (codebase,
+   web, Praxis recall) and pressure-tests for completeness. Tabular requirements go through the
+   H6 linearizer + rejected-pile audit.
+4. **Self-consistency via the KG** — run contradiction detection with **auto-resolution OFF** so
+   conflicts surface (`praxis_get_contradictions`) instead of silently rejecting; report
+   contradictions + under-specified requirements; human resolves.
+5. **`save_snapshot("prd-<project>")`** ("push") — PRD-only, since the mount isn't carried.
+
+**Definition of done for a plan (the gate the human clears):** every requirement maps to ≥1
+binary acceptance condition, and zero unresolved contradictions in the PRD snapshot. Editing a
+plan later = `load_snapshot("prd-<project>", mode=replace)` → edit → re-save.
+
+### M1b — Execute + verify (autonomous, coding)
+
+- **Execute:** `mount` `general-pool` + `prd-<project>` read-only over a fresh working graph; the
+  single agent (Claude Code) does the task, pulling grounding context from Praxis via MCP and
+  citing the facts that grounded each decision.
 - **Verify skill:** external-signal gates — tests / build / type-check / lint — as blocking.
   Corrections fire **only** on a failing external signal (no self-directed revision).
+
+**Covers:** R1 (plan→execute→verify shape), R2, R7, R8. **Exit:** a human hardens a small PRD to
+the done-gate; the agent then builds and verifies one task from it end-to-end, self-correcting on
+a failing test, no human mid-execution.
 
 **Covers:** R2, R7, R8. **Exit:** the loop builds and verifies one real coding task end-to-end,
 self-correcting on a failing test, with no human mid-run.

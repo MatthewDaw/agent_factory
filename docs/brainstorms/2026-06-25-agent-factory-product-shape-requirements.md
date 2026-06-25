@@ -40,9 +40,23 @@ and (c) isn't locked to coding. The first real workload is the team mental-perfo
   sandbox, telemetry, and remote/web execution. Build mostly the Praxis glue and the
   plan→execute→verify workflow as skills/commands.
 - **Single agent; thin harness; Praxis owns the *knowing* system.** No agent-level domain
-  split (Praxis partitions by tenancy/scope, not by agent). Retrieval, dedup, contradiction
-  handling, and provenance are Praxis's job, consumed through one knowledge port; we do not
-  rebuild them. (Carried from prior ideation, `docs/ideation/2026-06-25-...`.)
+  split. Retrieval, dedup, contradiction handling, and provenance are Praxis's job, consumed
+  through one knowledge-access policy (skills over the Praxis MCP); we do not rebuild them.
+  (Carried from prior ideation, `docs/ideation/2026-06-25-...`.)
+- **Planning is human-controlled; the factory hardens, it does not author.** The factory never
+  autonomously writes or approves a plan. Its planning job is to pressure-test for completeness,
+  research, and enforce self-consistency via the KG, reporting what's inconsistent or
+  under-specified. The human clears the gate. Autonomy lives in *execution*, not planning.
+- **Self-consistency is a knowledge-graph job.** The plan's requirements are ingested as facts;
+  Praxis's contradiction detection (with **auto-resolution OFF** so conflicts surface rather than
+  silently rejecting) plus the rejected-pile audit are the consistency checker the human resolves
+  against.
+- **Durable knowledge = named snapshots; the live graph = scratch.** Verified against the live
+  MCP: a single principal rules out per-project user_ids, and `save_snapshot` captures the whole
+  live graph. So each durable pool — `general-pool`/planning knowledge, each `prd-<project>`,
+  learnings — is a **named snapshot**; the live graph is the current session's working set;
+  reference knowledge is composed read-only with **`mount`** (read without loading). A PRD plan
+  lives in **its own snapshot**, authored in a cleared live graph with planning knowledge mounted.
 
 ## Actors
 
@@ -71,6 +85,19 @@ and (c) isn't locked to coding. The first real workload is the team mental-perfo
   not a standalone application.
 - R6. The factory must reuse Claude Code's execution harness (agent loop, tool dispatch,
   sandbox, telemetry) rather than reimplementing it.
+
+**Planning (human-controlled)**
+- R15. Planning must be **human-controlled**: the factory must not autonomously author or approve
+  a plan. It pressure-tests for completeness, researches (codebase/web/Praxis recall), and reports
+  gaps — the human authors and clears the plan.
+- R16. Plan **self-consistency must be enforced via the KG**: the plan's requirements are ingested
+  as facts and contradictions are **surfaced** (auto-resolution off) for the human to resolve;
+  the factory never silently settles them.
+- R17. A PRD/plan must live in **its own snapshot**, authored in a cleared live graph with the
+  planning-knowledge snapshot **mounted read-only**, so the plan snapshot contains only plan facts.
+  The access policy must **save-before-clear** to avoid losing live state.
+- R18. A plan is **done** only when every requirement maps to ≥1 **binary acceptance condition**
+  and **zero unresolved contradictions** remain in the plan snapshot.
 
 **Execution & verification loop**
 - R7. Each run must follow a **plan → execute → verify** loop with externally-grounded
@@ -133,30 +160,34 @@ and (c) isn't locked to coding. The first real workload is the team mental-perfo
 
 ## Dependencies / Assumptions
 
-- **Unattended runs imply a reachable Praxis backend with the machine off** — i.e. the prod
-  (App Runner) or another hosted Praxis, since `localhost:8000` won't be reachable. (Assumption
-  to confirm — see Outstanding Questions.)
+- **Local Praxis only (decided).** Runs in the dedicated `agent-factory` org against local
+  Praxis; "unattended" means a long-running local session, not machine-off. Hosted/remote Praxis
+  is deferred.
+- **Own thing, Praxis-native (decided).** Not built on compound-engineering; the agent uses the
+  **Praxis MCP** directly, with the access policy expressed as skills.
+- **Event log is our own structured log (decided)**, not derived from Claude Code transcripts.
 - **Praxis tabular-ingestion integrity (gap H6)** is being addressed separately
-  (`../../praxis/docs/proposals/2026-06-24-tabular-ingestion-integrity.md`); the factory's
-  ingestion-integrity shim depends on it.
-- Built on Claude Code's plugin runtime; remote execution relies on Claude Code's
-  cloud/web/scheduled capabilities.
-- Single-agent design; no multi-agent orchestration assumed.
+  (`../../praxis/docs/proposals/2026-06-24-tabular-ingestion-integrity.md`); the factory's local
+  linearizer + rejected-pile audit is the interim shim.
+- **Praxis backend reliability is an open risk** — the local backend has degraded on write bursts
+  (all writes 500 while `/health` stays green), reinforcing the keep-writes-off-the-critical-path
+  and local-fallback bets.
+- Built on Claude Code's plugin runtime; single-agent design, no multi-agent orchestration.
 
 ## Outstanding Questions
 
-**Resolve before planning**
-- **Build-vs-reuse:** fork/extend the existing `compound-engineering` skills (lfg, ce-plan,
-  ce-work) or build clean Praxis-native skills? Leaning "study lfg's shape, build Praxis-native."
-- **Praxis backend for unattended runs:** confirm prod/hosted Praxis is acceptable (and
-  auth/key minting for it), or constrain unattended runs to when local Praxis is reachable.
+**Resolved this session** (were "resolve before planning")
+- Build-vs-reuse → **own Praxis-native plugin** (not compound-engineering).
+- Praxis backend → **local only**; unattended = long-running local session.
+- Event log → **own structured log** (built in M0).
+- Planning HITL → **human-controlled planning** (R15–R18); autonomy is execution-only.
 
 **Deferred to planning**
 - The concrete shape of the **review queue** (where parked checkpoints live and how the operator
   approves them).
-- The **confidence signal / threshold** mechanism for park-vs-proceed.
-- Whether the **event log** is built fresh or derived from Claude Code session transcripts.
-- Sandbox/execution environment for remote coding runs.
+- The **confidence signal / threshold** mechanism for park-vs-proceed (execution, M4).
+- Sandbox/execution environment for coding runs.
+- How `mount` reference knowledge interacts with retrieval ranking/budget (Praxis gaps H2/H7).
 
 ## Sources / Research
 
