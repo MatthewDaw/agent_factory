@@ -63,9 +63,26 @@ Work one requirement (or one tight cluster) at a time. For each, run these moves
 **one question per turn** using the blocking question tool, single-select with a free-text escape,
 and prefer drafting-for-the-human-to-judge over asking-from-blank.
 
-**a. Research before asking.** Pull grounding from the mounted snapshots + repo + (when needed)
-web, so you only ask what the artifacts can't answer. Pre-fill inferred details as "inferred —
-confirm?" for the human to edit.
+**a. Resolve before you ask (mandatory gate before any question).** Never surface a
+decision/fork to the human until you have first tried to answer it from existing sources, in this
+order:
+1. **The PRD / source text** — re-read the relevant section. If it specifies the answer, use it
+   and cite the line; do **not** ask.
+2. **Mounted knowledge** — query `get_context` against `planning-knowledge`, `constitution`, and
+   any mounted prior `prd-<project>`. If an existing fact/invariant answers it, use it; do not ask.
+3. **Conventional default** — if the PRD is *silent* and there is a clear, low-regret conventional
+   default (e.g. streak resets to 0 on a miss; DST uses local wall-clock), **take the default**,
+   record a `decision note: PRD silent → conventional default` fact, and surface it for *override*
+   rather than asking an open question. Do not invent forgiving/clever behavior the PRD didn't ask
+   for — that's scope creep.
+4. **Only then ask** — reserve a blocking question for a **genuine product fork**: the PRD left it
+   open AND no conventional default is clearly right AND reasonable choices materially differ
+   (e.g. "is the checklist required for completion?"). When you do ask, say what you already
+   checked ("PRD is silent; no convention applies") so the human knows it's a real decision.
+
+The failure mode to avoid: asking the human something the PRD already answers, or manufacturing a
+decision out of an edge that has an obvious default. Pre-fill what you resolved as
+"resolved from <source>" / "default (PRD silent) — confirm?" so the human edits rather than dictates.
 
 **b. Admission gate + ambiguity forge.** A requirement is not admitted to the graph until it
 carries ≥1 **binary acceptance condition** ("when X, the system does Y, observable via Z"). Draft
