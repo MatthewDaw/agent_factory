@@ -158,20 +158,29 @@ write runs an inline semantic-judge LLM call and can **time out client-side afte
 succeeds** — consumers must read back rather than blind-retry (handled in `factory-memory`); the
 latency/timeout itself is tracked in **H13**.
 
-### H11. No "dismiss / keep-both" contradiction resolution — **HOLE (found live 2026-06-25)**
+### H11. No "dismiss / keep-both" contradiction resolution — **RESOLVED (Praxis fix landed 2026-06-25, branch `feat/dismiss-contradiction-h11`)**
 When a surfaced contradiction is a **false positive** (the engine flagged two facts that both
 actually hold — e.g. the captain-approval vs. coach-immediate pair, different actors), there is no
 non-lossy way to clear it. `resolve_contradiction` offers only `keepId` (supersedes one — loses a
 true fact) or `customText` (replaces both with one — forces a lossy merge of two distinct facts).
 Neither preserves two distinct, compatible facts.
-→ *Praxis improvement:* a `dismiss`/keep-both resolution — `POST /contradictions/{id}/resolve
-{"dismiss": true}` — that drops the pending edge and leaves **both** facts `active` (the one
-intentional override of FR-005's ≤1-active-contradictor rule, on explicit human judgement).
-→ *Test:* pytest red-spec `test_resolve_dismiss_keeps_both_active_and_clears_pending` (belongs in
-`knowledge/serve/tests/test_server.py`; needs the local `client` fixture). The precision fix for the
-false-positive *class* is H10; H11 is the escape hatch for the residue precision can't eliminate.
-→ *Meanwhile (local workaround):* resolve via `customText` that accurately combines the two facts,
-or `keepId` one + re-add the other — both lossy; `factory-memory` notes this until H11 lands.
+**Implemented:** `POST /contradictions/{id}/resolve {"dismiss": true}` flips each pending
+`contradiction` edge among the members to a new `dismissed` kind (preserved + reversible, not
+deleted — the human decision stays discoverable) and forces **both** facts `active`. A `dismissed`
+edge is neither `contradiction` (pending) nor `contradicted_by` (resolved/superseded), so the pair
+drops out of `get_contradictions` while both stay in recall. The one intentional override of
+FR-005's ≤1-active-contradictor rule, on explicit human judgement. Wired end to end:
+- **Backend** — `resolve` route dismiss branch + `FactsCandidates.resolve_dismiss` (returns
+  `{"dismissed": true, "facts": [...]}`).
+- **MCP** — `praxis_resolve_contradiction(..., dismiss=True)`.
+- **UI/services** — `contract_v1.build_resolve_body` (new `RESOLUTION_DISMISS`), `api_client`
+  (handles the `{"dismissed", "facts"}` shape), `data_provider` protocol, and `mock_provider`
+  (`_dismiss_contradiction` keeps both active, clears cross-flags).
+→ *Test:* `test_resolve_dismiss_keeps_both_active_and_clears_pending` in
+`knowledge/serve/tests/test_server.py` — **green** (full serve suite 24/24, MCP 47/47, frontend mock
+17/17). The precision fix for the false-positive *class* is H10; H11 is the escape hatch for the
+residue precision can't eliminate.
+→ *Local workaround now retired:* no longer need the lossy `customText`/`keepId`-and-re-add dance.
 
 ### H12. Write-time metadata not persisted/honored — **HOLE (verified live 2026-06-25)** · keystone prereq
 `add_insight` accepts `source`/`scope`/`category` but **does not honor them** (a `/context` hit
