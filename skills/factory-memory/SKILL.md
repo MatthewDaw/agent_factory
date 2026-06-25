@@ -52,10 +52,17 @@ both the latency and the distillation loss.
 - `on_conflict="auto_resolve"` (the default) — newest wins, loser silently → `rejected`, nothing
   flagged. Only use when you *intend* a confirmed overwrite (e.g. superseding a known-stale learning).
 
-**Write timeouts are false negatives.** A conflict-checked write runs an inline semantic-judge LLM
-call and can time out *client-side after the write already succeeded*. On any write timeout, **read
-back** (`praxis_list_graph` / `praxis_get_context`) to confirm before retrying — blind retry creates
-duplicates. Log a `note` event recording the timeout + read-back result.
+**Write serially — never fire parallel write bursts.** Conflict-checked writes are expensive
+(inline semantic-judge LLM call) and concurrent bursts have driven the backend to 500 on all
+requests (gap H13.2). Issue `add_insight`/`ingest` **one at a time**, awaiting each, even when you
+have many facts to write. Throughput is not worth a poisoned backend.
+
+**Write timeouts are false negatives — read back, then re-add only if absent.** A conflict-checked
+write can time out *client-side after the row already committed* (gap H13.1). On any write timeout:
+1. **Read back** with `praxis_list_graph` / `praxis_get_context` to check whether the fact landed.
+2. If it **did** land → done; do **not** retry (blind retry creates duplicates).
+3. If it **did not** → re-add it (singly).
+Log a `note` event recording the timeout + the read-back outcome either way.
 
 ## 2. Tabular ingestion integrity (the H6 audit) — REQUIRED on any table/bulk write
 
