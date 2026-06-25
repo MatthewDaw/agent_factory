@@ -49,9 +49,12 @@ self-directed. Respect verify's bounded loop: N identical failures → replan th
 escalate to the human. On **pass**, continue.
 
 **e. Write back (only what an external signal confirmed).** On a verified pass, write confirmed
-learnings/fixes via `factory-memory` (`on_conflict="surface"`, serial, read-back-on-timeout). Cite
-the requirement id; attach the verification outcome. Never write speculative "this probably works"
-facts. **Never block the loop waiting on a write** — queue it and proceed.
+learnings/fixes via `factory-memory` (`on_conflict="surface"`, serial or `add_insights` for a batch,
+read-back-on-timeout). Stamp `source`, `category="learning"`, and **`derived_from=[the fact ids that
+grounded it]`** (so a flipped basis later surfaces this learning via `praxis_get_stale_derivations`).
+Then call **`praxis_record_outcome(requirement_fact_id, "succeeded")`** to feed the H1 trust loop
+(and `"failed"` on the facts behind a failed attempt). Never write speculative facts; **never block
+the loop on a write** — queue it and proceed.
 
 ## 2. Long-horizon control (so the run survives length)
 
@@ -68,9 +71,11 @@ facts. **Never block the loop waiting on a write** — queue it and proceed.
 ## 3. Decisions are episodes (the why, not just the what)
 
 When the loop makes a non-obvious choice (picked library X; defaulted Y because the plan was silent),
-record it as a **decision/episode** through `factory-memory` so the rationale compounds and can be
-traced (Praxis H4/H5). This is the local production of the "why we decided" record — separate from
-the semantic facts so it doesn't pollute task-grounding retrieval.
+record it with **`praxis_record_episode`** (per `factory-memory` §1b) — `text` = decision + rationale,
+`alternatives` = options not taken, `derived_from` = the facts it rested on. Episodes are store-only
+and excluded from semantic recall by default, so the "why" compounds and stays traceable without
+polluting task-grounding retrieval. Flip `outcome` later via `praxis_record_outcome` when the
+decision proves out or fails.
 
 ## Never
 - Never run a crew — this is one agent orchestrating phases and tools.

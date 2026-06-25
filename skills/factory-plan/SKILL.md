@@ -47,7 +47,9 @@ Then run the tenancy lifecycle through `factory-memory`:
    `constitution` (invariants, if it exists), and any relevant prior `prd-<project>` or research
    snapshot. Mounted facts inform retrieval but never enter the PRD snapshot.
 4. Write each settled requirement with **`add_insight(..., on_conflict="surface")`** (tabular
-   content via the linearizer first). Surface mode is mandatory during planning.
+   content via the linearizer first), stamping `source="prd-<project>"`, `category="requirement"`,
+   and `meta={"requirement_id": "<R-id>"}` so it's citable and the R-id↔fact mapping survives in
+   Praxis (read back via `praxis_get_fact`). Surface mode is mandatory during planning.
 
 **Verified Praxis behavior (2026-06-25):** with `on_conflict="surface"`, a detected contradiction
 is **surfaced, not auto-resolved** — both facts are kept (incumbent stays `active`, newcomer lands
@@ -72,9 +74,10 @@ order:
    any mounted prior `prd-<project>`. If an existing fact/invariant answers it, use it; do not ask.
 3. **Conventional default** — if the PRD is *silent* and there is a clear, low-regret conventional
    default (e.g. streak resets to 0 on a miss; DST uses local wall-clock), **take the default**,
-   record a `decision note: PRD silent → conventional default` fact, and surface it for *override*
-   rather than asking an open question. Do not invent forgiving/clever behavior the PRD didn't ask
-   for — that's scope creep.
+   record it with **`praxis_record_episode`** (`text` = the decision + "PRD silent → conventional
+   default", `alternatives` = the options not taken), and surface it for *override* rather than
+   asking an open question. Do not invent forgiving/clever behavior the PRD didn't ask for — that's
+   scope creep.
 4. **Only then ask** — reserve a blocking question for a **genuine product fork**: the PRD left it
    open AND no conventional default is clearly right AND reasonable choices materially differ
    (e.g. "is the checklist required for completion?"). When you do ask, say what you already
@@ -101,8 +104,10 @@ specified what happens on empty input — correct?") to corner vagueness into co
 **d. KG self-consistency.** Because writes use `on_conflict="surface"`, the surface is
 **`praxis_get_contradictions`** — the proper queue. After admitting a batch, read it and present
 each pending pair as a **paired diff** ("Req A: sessions expire in 24h / Req C: sessions are
-persistent"). The human settles each with `praxis_resolve_contradiction(pair_id, keep_id |
-custom_text)` — keep one side, or supply reconciled text. You never settle it yourself. Reuse the
+persistent"). The human settles each with `praxis_resolve_contradiction(pair_id, keep=…)` —
+`keep="<id>"` to keep one side, **`keep="all"` when it's a false positive** (both genuinely hold,
+e.g. different actors — keeps both active, nothing lost), or `custom_text` to reconcile. You never
+settle it yourself. Reuse the
 same machinery as an **oracle**: a requirement that conflicts with a mounted `constitution`
 invariant, dependency/spec-registry fact, or research-evidence fact surfaces as the same kind of
 pending pair — inspect provenance/`source` on each side to tell which is the invariant vs. the new

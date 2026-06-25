@@ -83,12 +83,13 @@ not by the agent or a judge declaring success. In an unattended run, a low-confi
 step **parks** a checkpoint for batch review (the confidence-gated escalation — M4); high-confidence
 steps proceed. The human remains the oracle; the judge only routes.
 
-## 6. Record the outcome
+## 6. Record the outcome (close the H1 loop)
 
-Emit an `outcome` event with the verdict, the signal that decided it, and the task/requirement id.
-**Reserve an outcome slot per requirement** so a later run can fold the result back into fact trust
-(Praxis H1 / the compound step) — "requirements phrased like this slipped verification 40% of the
-time." Only an externally-confirmed pass is eligible to write a learning back (per `factory-memory`).
+Emit an `outcome` event (verdict, deciding signal, task/requirement id) to the local log, **and**
+feed it back to Praxis: call **`praxis_record_outcome(fact_id, "succeeded"|"failed")`** on the
+requirement fact (and on any learning the task acted on). Repeated failures sink a fact in
+retrieval; proven facts hold — this is the compounding mechanism, and it's live now (not deferred).
+Only an externally-confirmed pass is eligible to write a learning back (per `factory-memory`).
 
 ## Never
 - Never mark a task done without a passing external signal (or, for non-coding, human confirmation).

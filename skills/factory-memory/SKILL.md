@@ -47,7 +47,15 @@ org (it holds unrelated test data).
 | A raw record that must bypass the pipeline for review | `praxis_insert_fact` | Lands in `proposed`; special cases only. |
 
 Prefer shaping facts and using `add_insight` over `ingest` wherever practical — it avoids
-both the latency and the distillation loss.
+both the latency and the distillation loss. For **several** facts at once, use
+**`praxis_add_insights`** (bulk) — one round-trip, written serially server-side, with a per-item
+`retrievable` flag confirming read-your-writes (this is the right tool for a batch, not a loop of
+single calls).
+
+**Stamp metadata on every write** (all honored + returned — H12): `source` (where it came from, for
+provenance citation), `category` (`"requirement"` / `"learning"` / etc.), `meta` (structured, e.g.
+`{"requirement_id":"R4"}`), and `derived_from=[ids]` (the facts a learning was built on — H5, so an
+invalidated basis later surfaces this fact as suspect via `praxis_get_stale_derivations`).
 
 **Conflict mode (`on_conflict`) — choose deliberately:**
 - `on_conflict="surface"` — a detected contradiction is **surfaced, not resolved**: both facts
@@ -73,20 +81,22 @@ Log a `note` event recording the timeout + the read-back outcome either way.
 ## 1b. Decisions & episodes (the *why*, not just the *what*)
 
 When the factory makes a non-obvious choice (chose library X; defaulted Y because the PRD was
-silent), record it as a **decision/episode** — the rationale that should compound and be traceable,
-kept separate from semantic facts so it doesn't pollute task-grounding retrieval.
+silent), record it with **`praxis_record_episode`** — the dedicated decision-log tool:
 
-- **Target convention (Praxis H4, in flight):** an episode = a fact written with
-  `category="episodic"` + a `meta.episode` blob {decided_at, alternatives, outcome} + `derived_from`
-  edges to its basis facts; `record_episode(...)` is the helper. Episodes are append-only — never
-  deduped/merged/superseded.
-- **Interim (until H4 + H12 land):** `category`/`meta` aren't honored on writes yet (H12), so for
-  now write the decision as a normal `add_insight` whose **text carries the rationale** ("Chose
-  reset-to-0 because the PRD was silent; alternatives were carry-over / no-reset"), and **also**
-  log it as a `decision` event in the event log (the local, reliable record). Don't depend on a
-  queryable episodic surface in Praxis yet.
-- Once H4/H12 ship, switch to `record_episode` / `category="episodic"`; the event-log decision
-  records are what backfill it.
+```
+praxis_record_episode(
+  text="Chose reset-to-0 for the team streak because the PRD was silent on miss semantics.",
+  alternatives=["carry-over", "no reset"],
+  outcome="pending",                 # later flipped via praxis_record_outcome
+  derived_from=[<basis fact ids>],   # the facts/requirements the decision rested on (H5)
+  decided_at=<ISO ts, optional>)
+```
+
+Episodes are **store-only**: stored whole, append-only, **bypass** dedup/merge/contradiction, and
+are **excluded from `praxis_get_context` by default** (H2) so rationale never pollutes semantic
+recall. Read them back with `include_episodic=True` on `get_context`, or the episode-log query.
+Also mirror each decision as a `decision` event in the local event log (the offline replay record).
+Use `record_episode` — **not** `add_insight(category="episodic")` — for decision journals.
 
 ## 2. Tabular ingestion integrity (the H6 audit) — REQUIRED on any table/bulk write
 
@@ -112,9 +122,12 @@ siblings (B). A is shimmed locally; B is server-side and can only be *caught*, n
 - Use `praxis_get_context(query, top_k)` for task grounding. Mount the relevant project
   snapshot first so general + project facts compose in one ranked result.
 - **Cite provenance.** Every decision the agent makes should name the Praxis fact(s) that
-  grounded it (the hit's `source`/`score`), logged on the `decision` event.
-- Retrieval returns only currently-valid `active` facts. To reconstruct what was believed at
-  a past point, pass an `as_of` timestamp (used by reproducible runs in M2).
+  grounded it (the hit's `source`/`score`/`id`), logged on the `decision` event. Episodes are
+  excluded by default; pass `include_episodic=True` to recall past decisions.
+- **`meta` isn't on `get_context` hits** (lean recall path) — read a fact's `meta` + audit trail
+  with **`praxis_get_fact(cid)`**.
+- Retrieval returns only currently-valid `active` facts. **Pin `as_of` at run kickoff** for
+  reproducible runs (point-in-time recall — the whole run sees one stable knowledge version).
 
 ## 4. Write-back policy (compounding)
 
@@ -125,10 +138,18 @@ siblings (B). A is shimmed locally; B is server-side and can only be *caught*, n
   the one project.
 - Write with `on_conflict="surface"` so a contradiction is **surfaced** rather than silently
   overwriting — inspect with `praxis_get_contradictions` and settle with
-  `praxis_resolve_contradiction` (keep one side or supply reconciled text). Record the resolution
-  as a `decision` event.
-- Attach outcome context from the event log so future milestones can weight facts by how they
-  fared (local stand-in for Praxis gaps H1/H4/H5).
+  `praxis_resolve_contradiction(pair_id, keep=…)`. Three resolutions:
+  - `keep="<winner_id>"` — genuine conflict, keep one side (the loser is superseded).
+  - `keep="all"` — **false positive** (both genuinely hold, e.g. different actors/scopes): keeps
+    **both `active`**, clears the pending edge. This is the non-lossy dismiss — use it instead of
+    `custom_text` for false positives.
+  - `custom_text="…"` — replace the cluster with one reconciled fact.
+  Record the resolution as a `decision` event.
+- **Close the compounding loop with outcomes (H1).** After a learning's suggested action is
+  verified, call **`praxis_record_outcome(fact_id, "succeeded"|"failed")`** — repeated failures sink
+  a fact in retrieval, proven facts hold. This is what makes the pool get *more accurate*, not just
+  bigger. When a basis fact is invalidated, check **`praxis_get_stale_derivations`** /
+  `praxis_dependents` for the learnings now suspect, and re-verify or reject them.
 
 ## 5. Never
 
