@@ -122,6 +122,12 @@ plan later = `load_snapshot("prd-<project>", mode=replace)` → edit → re-save
 the done-gate; the agent then builds and verifies one task from it end-to-end, self-correcting on
 a failing test, no human mid-execution.
 
+**Status (2026-06-25):** skills drafted — `factory-plan` (M1a), `factory-verify` + `factory-execute`
+(M1b), over `factory-memory` (the port) + the `event_log`/`tabular` helpers. The plan loop was
+partially dry-run (completion & streak cluster → `prd-team-app` snapshot). **Not yet exercised
+end-to-end on a real slice** — resuming the dry-run is gated on the in-flight Praxis fixes
+(H10-residue false positives + H12 writer-metadata, which provenance/citation depends on).
+
 **Covers:** R2, R7, R8. **Exit:** the loop builds and verifies one real coding task end-to-end,
 self-correcting on a failing test, with no human mid-run.
 
