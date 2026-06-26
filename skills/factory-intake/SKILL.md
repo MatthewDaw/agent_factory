@@ -1,0 +1,121 @@
+---
+name: factory-intake
+description: >
+  The extraction front-end that turns source material — prose PRD/spec docs AND a clickable
+  wireframe — into a structured candidate-requirement inventory, then hands off to factory-plan
+  for hardening. Use when starting a new project (or re-baselining one) from a PRD + wireframe and
+  you need the hardened prd-<project> Praxis fact-set. It does NOT admit or gate the plan itself
+  (factory-plan owns that); it produces the atomic candidates factory-plan consumes, and the
+  surface<->requirement bindings the later wireframe->code step queries.
+---
+
+# Factory Intake (dual-source extraction)
+
+Two inputs, one output. **Inputs:** the prose source docs (the behavioral truth — `docs/inspiration/`)
+and the wireframe HTML (the surface truth + the completeness cross-check). **Output:** a structured
+candidate-requirement inventory that `factory-plan` hardens into the `prd-<project>` Praxis snapshot.
+
+The division of labor is deliberate:
+- **Prose docs** are the source of record for *behavior* — rules, data model, acceptance criteria.
+- **Wireframe** is the source of record for *surfaces* — screens, states, actions, navigation —
+  and the **completeness cross-check** (it already enumerates the implied states: empty, offline,
+  error, completed, fallback). It is **not** a second behavioral truth.
+- This skill **extracts and reconciles**; `factory-plan` **admits, challenges, gates**. Don't
+  duplicate hardening here.
+
+All Praxis access follows **`factory-memory`**. This is a single decision-making agent that may use
+the **read-only retrieval sub-agent** (`factory-execute` §1a) for bulk reading — never a crew.
+
+## Step 0 — Read the sources (read-fully guard)
+
+1. **Read the prose docs FULLY in your own context** (no limit/offset). They are the named source
+   of behavioral truth — do not delegate them away. List the PRD folder; read every doc.
+2. **Delegate the wireframe surface enumeration** to the read-only sub-agent. Wireframe HTML is
+   large and mechanical; have the sub-agent return a compact **surface inventory** — one row per
+   screen (`id="s-X"`), its title, the states it shows, and its inert actions (`go(...)`, button
+   labels) — filtering ruthlessly. The parent never ingests the raw HTML.
+
+## Step 1 — Extract candidates (two passes, then reconcile)
+
+**Pass A — behavioral, from prose.** Atomize the rules. Your Dev-Ready Spec is already near-
+structured (epics + explicit acceptance + data model + REST API), so this is *atomize + mint binary
+conditions + dedupe across docs*, not invention. Over-generate; the gate filters.
+
+**Pass B — surface, from the wireframe inventory.** Each screen, each state, each action becomes a
+candidate. This is where the implied states we forced into the wireframe (offline / empty / invalid-
+invite / completed / fallback) become first-class requirements instead of being forgotten.
+
+**Reconcile.** Merge duplicates by *concept* (the same rule stated in the Dev-Spec and the
+Requirements doc is ONE candidate with two citations) so you don't admit five near-duplicates and
+lean entirely on Praxis dedup. Where prose and wireframe disagree, keep BOTH as candidates and let
+factory-plan's contradiction queue settle it (e.g. wireframe shows a coach 1:1 inbox; prose says
+post-MVP — surfaces as a pending pair, human tags scope).
+
+### The candidate-record schema (the crux — everything downstream keys off this)
+
+Emit the inventory to `<project>/.factory/requirement-candidates.json` (a local, reviewable,
+diffable staging artifact — not the source of truth; the hardened snapshot is). One record:
+
+```json
+{
+  "id": "R1",
+  "statement": "completion = daily rep submitted AND all three ratings present; the habit checklist is recorded but never gates completion",
+  "source": ["Requirements §3", "Dev-Spec Epic D", "wireframe-player.html#s-today"],
+  "acceptance": "given a rep + effort/focus/support all set, status=complete; with the checklist left unchecked, status is still complete",
+  "verify": "automated",
+  "surfaces": ["s-today"],
+  "defines": ["completion"],
+  "references": ["daily rep", "ratings", "habit checklist"],
+  "scope": "mvp"
+}
+```
+
+Field rules:
+- **`statement`** — ONE atomic behavior, written as a **single semicolon-joined sentence** (the
+  Praxis sentence-fragmentation workaround — multi-sentence insights split per sentence; see
+  CONSTITUTION §8). This is mandatory: emit the shape Praxis can admit whole.
+- **`source`** — cite prose section/epic AND the wireframe screen(s); `file.html#s-X` form.
+- **`acceptance`** — a draft binary condition ("when X, system does Y, observable via Z"). If the
+  prose gives one, use it; if not, leave a best-draft and flag it for factory-plan's ambiguity forge.
+- **`verify`** — `"automated"` (a command the loop runs: test/build/type-check/lint — the default)
+  or `"manual"` (needs human confirmation: UX feel, a visual). Drives the C4 split downstream.
+- **`surfaces`** — wireframe screen ids this requirement governs, or `["backend-only"]`. This is
+  the seed of the surface<->requirement binding (Step 3).
+- **`defines` / `references`** — concepts, for factory-plan's H14 dangling-reference gate.
+- **`scope`** — `"mvp"` or `"post-mvp"` (the badged wireframe items).
+
+## Step 2 — Hand off to factory-plan (don't re-implement hardening)
+
+Invoke **`factory-plan`** with the candidate inventory as its input. factory-plan runs unchanged:
+- Admit each record as a fact — `add_insight(..., on_conflict="surface", category="requirement",
+  meta={requirement_id, surfaces, scope, verify})` — `statement` as the content, `acceptance` as
+  the binary condition.
+- Adversarial / gap lenses; contradiction queue (incl. the prose↔wireframe clashes you preserved).
+- **H14, now bidirectional** (the completeness check intake exists to enable): every wireframe
+  surface maps to ≥1 requirement, AND every MVP requirement maps to ≥1 surface or is explicitly
+  `backend-only`. A screen with no backing rule, or an MVP rule with no screen, blocks the gate.
+- Human clears the gate → `save_snapshot("prd-<project>")`.
+
+## Step 3 — Persist the surface↔requirement binding
+
+The binding lives in each requirement fact's **`meta.surfaces`** (set at admission). That is the
+queryable bridge the wireframe→code step uses: to build a screen, it loads the `prd-<project>`
+snapshot and selects the facts whose `meta.surfaces` includes that screen id, giving a per-screen
+hermetic context (behavior from Praxis, layout from the wireframe HTML in git). Keep the binding in
+`meta` rather than inventing a new edge type — the project fact-set is bounded, so the executor can
+filter the snapshot locally by surface. (If a requirement is `backend-only`, it simply has no
+surface and is pulled by task/DAG dependency instead.)
+
+## Never
+- Never treat the wireframe as a behavioral source of truth — behavior comes from the prose; the
+  wireframe contributes surfaces, states, and the coverage cross-check.
+- Never emit a multi-sentence `statement` — one semicolon-joined sentence (fragmentation workaround).
+- Never admit or gate the plan here — that is factory-plan's job; intake only produces candidates.
+- Never delegate the prose docs to a sub-agent — read the named behavioral source fully yourself;
+  only the bulk wireframe HTML is delegated.
+- Never let extraction's over-generation reach the snapshot unfiltered — the gate is the filter.
+
+## Compounding
+When a correction reveals a class of miss (a requirement the prose stated but extraction dropped, a
+wireframe state with no rule, a recurring prose↔wireframe clash), tighten the relevant pass above
+and record a `factory-memory` learning so the next intake starts from a stricter extractor.
