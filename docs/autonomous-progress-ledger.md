@@ -8,13 +8,13 @@ Update at the end of every pass. Newest entries at the bottom of each section.
 
 ## NEXT (the resume pointer)
 
-1. **Build R5 (team-day boundary)** in `team-app` — pure-logic slice: a submission at local
-   time T on date D maps to team-day D when T >= 03:00, else D-1. Add `team_app/day_boundary.py`
-   + tests.
-2. Then **R8 (submission idempotency)** — one submission row per (user_id, team_day); re-submit
-   updates, never inserts a second / double-counts. Likely needs a small submission store
-   (in-memory dict keyed by (user_id, team_day)); add `team_app/submissions.py` + tests.
-3. Then the role/permission + visibility slices (R6 athlete-aggregate-only, R7 coach-per-athlete),
+1. **Build the role/permission + visibility slices** — R6 (athlete sees only team-aggregate
+   participation/streak, never per-teammate completion) and R7 (coach can query per-athlete
+   completion; athlete/captain cannot). Add a `team_app/roles.py` (role enum + a
+   `can_view_individual_completion(role)` / visibility helper) + a `team_app/views.py` or
+   aggregate-vs-individual view selector, with tests. This is the first slice needing a
+   role/permission concept — keep it a pure function over (role, data), no web layer yet.
+2. Then captain message (R9), weekly theme (R11) / daily prompt (R12), notifications (R13),
    captain message (R9), weekly theme (R11) / daily prompt (R12), notifications (R13), and a thin
    runnable local entry point. Follow build order in CONSTITUTION §6.
 4. Continue passes until DoD (CONSTITUTION §1).
@@ -37,10 +37,10 @@ standalone Praxis requirement — realized in code (episode `df98fd8b`).
 | R2  | Participation %  | `team_app/participation.py` | ✅ built, green |
 | R3  | Active roster    | `team_app/roster.py` | ✅ built, green |
 | R4  | Team streak (≥70%) | `team_app/streak.py` | ✅ built, green |
-| R5  | Team-day boundary (3AM) | — | ⛔ next |
+| R5  | Team-day boundary (3AM) | `team_app/day_boundary.py` | ✅ built, green |
 | R6  | Athlete visibility (aggregate only) | — | ⛔ todo |
 | R7  | Coach visibility (per-athlete) | — | ⛔ todo |
-| R8  | Submission idempotency | — | ⛔ todo |
+| R8  | Submission idempotency | `team_app/submissions.py` | ✅ built, green |
 | R9  | Captain message + approval | — | ⛔ todo |
 | R11 | Weekly theme | — | ⛔ todo |
 | R12 | Daily prompt | — | ⛔ todo |
@@ -49,7 +49,8 @@ standalone Praxis requirement — realized in code (episode `df98fd8b`).
 | —   | Auth + roles | — | ⛔ todo (PRD §1) |
 | —   | Local runnable entry point | — | ⛔ todo |
 
-Test suite: **20 passing** (completion 4 + participation 4 + roster 6 + streak 6) as of last build.
+Test suite: **33 passing** (completion 4 + participation 4 + roster 6 + streak 6 + day_boundary 6
++ submissions 7) as of last build.
 
 ## Plan status (Praxis `agent-factory` org / `prd-team-app` snapshot)
 
@@ -112,6 +113,13 @@ rather than writing a duplicate fix.
 
 ## Pass history
 
+- **2026-06-26 Pass 3:** Built **R8 submission idempotency** (`team_app/submissions.py`:
+  `SubmissionStore` upsert per (user_id, team_day); 7 tests incl. an R8→R2 integration proving a
+  retry stays at 50%). Suite 33 green. Episode `4dde8215` + `record_outcome(R8)`. Commit `7967d51`.
+  No bug. Next: R6/R7 visibility + roles.
+- **2026-06-26 Pass 2:** Built **R5 team-day boundary** (`team_app/day_boundary.py`:
+  `team_day(local_dt, reset_hour=3)`; 6 tests incl. midnight rollback + month boundary). Suite 26
+  green. Episode `c57ff10e` + `record_outcome(R5)`. Commit `994ecfb`. No bug.
 - **2026-06-26 Pass 1 (first loop pass):** Cleaned the polluted graph (repaired R5 + R8 via
   `edit_fact`; rejected+deleted the 3 stray R14 field-facts; re-saved snapshot @15 nodes). R14
   hit the known Augmenter merge into R8 → repaired R8, recorded decision to keep R14 in code
