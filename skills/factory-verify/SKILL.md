@@ -26,6 +26,14 @@ system does Y, observable via Z"). Verification checks *that* condition — not 
 has no binary acceptance condition, it was admitted wrongly; stop and send it back to planning,
 don't invent a pass criterion here.
 
+Each condition is tagged **`automated`** or **`manual`** (factory-plan §2b). You verify *automated*
+conditions here with external signals (§1). A **`manual`** condition you **do not self-check**: in
+an attended run, pause and hand it to the human as a checklist item ("ready for manual
+verification"), marking it passed only on their confirmation; in an unattended run you cannot
+confirm it — **park** it as a deferred owned-decision checkpoint (§5) for batch review, never
+auto-pass it. A task passes only when its automated conditions are green **and** its manual
+conditions are human-confirmed (or, unattended, explicitly parked).
+
 ## 1. The external-signal gates (coding tasks)
 
 Run the gates that make the acceptance condition observable. These are **blocking** — a failing

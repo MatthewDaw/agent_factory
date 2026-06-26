@@ -85,7 +85,9 @@ Each pass is one slice of forward progress. Run this checklist top to bottom:
    the re-run (cheap-by-default). After a praxis code change verified green, **restart `:8000`
    (§13)** so the live path is current.
 2. **Pick the next slice.** From the ledger's "Next" pointer / the PRD build order (§6).
-3. **Plan the slice** (factory-plan discipline):
+3. **Plan the slice** (factory-plan discipline). *Review leverage is inverse to distance from
+   execution — a bad requirement spawns thousands of bad lines, a bad plan hundreds, a bad line of
+   code just one — so spend the rigor here, on the facts, not on re-reading generated code:*
    - Admit each requirement via `praxis_add_insight(..., category="requirement",
      meta={"requirement_id": "R<n>"}, on_conflict="surface")`.
    - **Workaround (until the atomic-ingest fix lands):** phrase each requirement as ONE
@@ -95,9 +97,15 @@ Each pass is one slice of forward progress. Run this checklist top to bottom:
    - After a batch, `praxis_get_contradictions`; resolve genuine clashes
      (`resolve_contradiction`, keep the PRD-aligned side; `keep="all"` for false positives).
 4. **Execute.** Build the code in `team-app`, following existing patterns
-   (`team_app/*.py`, `tests/test_*.py`). Prefer test-first for behavior-bearing logic.
+   (`team_app/*.py`, `tests/test_*.py`). Prefer test-first for behavior-bearing logic. Bulk or
+   multi-file reading may be delegated to a disposable **read-only retrieval sub-agent**
+   (factory-execute §1a) to keep your window clear — it reads and digests only; you remain the sole
+   agent that edits, writes to Praxis, or commits.
 5. **Verify.** Run `python -m pytest -q` in `team-app`. Red→green. Corrections fire only on a
-   real failing signal.
+   real failing signal. Only **automated** acceptance conditions can be verified tonight; any
+   condition tagged **manual** (factory-plan §2b) cannot be confirmed with no human awake — record
+   it as a deferred owned decision (`record_episode`) and note it in the ledger for morning review
+   rather than self-passing it.
 6. **Compound.** Write back the implementation learning to Praxis with
    `derived_from=[requirement_id]` (mind the known Augmenter merge bug — see §8). Call
    `praxis_record_outcome(requirement_fact_id, "succeeded")` once verified.

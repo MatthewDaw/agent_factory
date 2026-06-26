@@ -10,6 +10,13 @@
 > agent or domain, so there is no substrate for an agent-level domain split — and the research
 > says single-agent matches/beats multi-agent under equal token budgets anyway. We orchestrate
 > *phases and tools*, not a crew of agents.
+>
+> **One carve-out (context hygiene, not orchestration):** the single decision-making agent may
+> dispatch a *disposable, read-only retrieval sub-agent* to absorb bulk / multi-file reading and
+> return a compact digest, so the parent's window never eats the raw noise. That is a context
+> firewall, not a crew — it reads and summarizes, it never decides, edits, writes to Praxis, or
+> commits, and it is never chained into a decision. A crew that divides *decision/domain* work or
+> writes in parallel remains out. (Spec: `factory-execute` §1a.)
 
 ---
 
@@ -79,15 +86,21 @@ Optionally deploy + route monitoring signals back into B1.
 
 ## C. Orchestration & long-horizon control (single-agent)
 
-Not a crew — a controller around the one agent.
+Not a crew — a controller around the one agent, with one permitted helper: a disposable,
+read-only **retrieval sub-agent** the controller calls to read/search/summarize large surfaces and
+return a compact digest (see the carve-out at the top + `factory-execute` §1a). It is a context
+firewall, never a second decision-maker.
 
 - **Phase controller / task loop:** walk the DAG, dispatch tasks, gate transitions.
 - **Goal re-anchoring:** re-inject the objective + success criteria at every context rollover
   (the cheap, proven defense against drift).
 - **Context assembly, budgeting & compaction:** decide what to pull from Praxis (hot
   constitution always in; warm/cold to a hard ceiling well below the rot threshold), and
-  **summarize, don't drop** at ~70–80% fill. This is the local realization of the tiered
-  hot/warm/cold pattern *over* Praxis retrieval.
+  **summarize, don't drop** at **~50–60% fill** (the lower band leaves recovery headroom). The
+  compaction artifact has fixed fields — end goal · current approach · steps completed · dead-ends
+  & why they failed · key file locations + roles · next step + acceptance condition (see
+  `factory-execute` §2). This is the local realization of the tiered hot/warm/cold pattern *over*
+  Praxis retrieval.
 - **Checkpoint / replay:** serialize loop state to external storage (and snapshot the Praxis
   graph at phase boundaries via the port).
 - **Saturation detector + circuit breaker:** watch round-trip count / context fill; iteration

@@ -15,6 +15,13 @@ Planning is **human-controlled**. Your job is to make the human's plan *self-con
 consistency checker. You never decide what the plan should be, and you never declare it done;
 you report what's inconsistent or under-specified, and the human clears the gate.
 
+**Why the gate sits here (review leverage).** A bad line of *code* costs one bad line; a bad line
+of *plan* can spawn hundreds of bad lines of code; a bad line of *research / requirements* can spawn
+thousands. Review leverage is inverse to distance-from-execution — so the human's scrutiny and this
+skill's rigor concentrate at the plan, where a caught error is cheapest to kill. Spending more
+effort hardening a requirement than reviewing the code it later produces is the correct ratio, not
+over-caution.
+
 All Praxis access follows the **`factory-memory`** skill's policy (tenancy, `insight` vs
 `ingest`, the tabular audit, mount/save rules). Record the session in the event log
 (`src/agent_factory/event_log.py`).
@@ -65,6 +72,11 @@ Work one requirement (or one tight cluster) at a time. For each, run these moves
 **one question per turn** using the blocking question tool, single-select with a free-text escape,
 and prefer drafting-for-the-human-to-judge over asking-from-blank.
 
+*Researching to resolve a question* (the PRD's other sections, the codebase, prior snapshots) may
+use the **read-only retrieval sub-agent** (factory-execute §1a) so bulk reading doesn't crowd the
+planning context — but **read any file the human or the PRD names explicitly fully in your own
+context first**; only delegate exploratory reading.
+
 **a. Resolve before you ask (mandatory gate before any question).** Never surface a
 decision/fork to the human until you have first tried to answer it from existing sources, in this
 order:
@@ -94,6 +106,13 @@ the candidate condition; the human accepts/edits/rejects. When an answer uses a 
 (`p95 < 200ms` / `p99 < 1s` / "feels instant in demo") that mint the testable fact. Keep a small
 library of ambiguity examples in `general-pool` and grow it (Step 4).
 
+**Tag each acceptance condition `automated` or `manual`** (in `meta`): *automated* = a command the
+loop runs itself (test / build / type-check / lint — the default; always prefer it); *manual* =
+needs a human to confirm (UX feel, a visual, a real external side-effect) and the executor **may
+not self-check it**. The split drives phase-gate pauses in attended execution; an unattended run
+(Constitution) auto-checks the automated ones and records each manual one as a deferred owned
+decision for morning review.
+
 **c. Adversarial pass (a skeptic must challenge).** For each requirement, file ≥1 falsifiable
 challenge — missing actor, unbounded condition, hidden dependency, unhandled empty/error case —
 as a *contradicting* fact, so an unanswered challenge blocks the gate like any contradiction. In
@@ -113,6 +132,17 @@ invariant, dependency/spec-registry fact, or research-evidence fact surfaces as 
 pending pair — inspect provenance/`source` on each side to tell which is the invariant vs. the new
 requirement. (Belt-and-suspenders: also glance at `praxis_list_graph(state="rejected")` in case a
 write slipped through on `auto_resolve` — but with surface mode the pending queue is the surface.)
+
+**e. A human correction is a fact, not an override.** When the human corrects a *factual* claim
+(not merely states a preference), admit the correction the same way as any requirement —
+`add_insight(..., on_conflict="surface")` — so that if it contradicts an admitted requirement or a
+mounted `constitution`/`prd-*` invariant it lands in the **same contradiction queue** (move d)
+instead of being silently absorbed. The human is in control of the plan, but a correction that is
+itself wrong, or that clashes with something already settled, should *surface* and be reconciled,
+not patched in blind. And when a correction invalidates earlier research, re-derive what rested on
+it — run `praxis_get_stale_derivations` on the affected fact ids and revisit those — rather than
+fixing only the one line the human pointed at. (This is the disciplined version of "verify the
+correction": route it through the graph you already trust, don't kick off speculative re-research.)
 
 ## Step 3 — The done-gate (the human clears it; you only report)
 
