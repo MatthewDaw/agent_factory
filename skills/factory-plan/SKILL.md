@@ -119,8 +119,18 @@ write slipped through on `auto_resolve` — but with surface mode the pending qu
 A plan is **done** only when all hold — report status against each, never declare it yourself:
 - Every requirement maps to ≥1 binary acceptance condition (or is an explicitly-deferred owned decision).
 - **Zero unresolved contradictions** in the live graph.
+- **No dangling concept reference (H14)** — every domain concept a requirement *references* is
+  *defined* by some admitted requirement or explicitly declared out of scope. This is the hole that
+  let an undefined "team streak" into prd-team-app: R2 referenced it, nothing defined it, and the
+  prose gate admitted R2 anyway. Tag each requirement with the concepts it `defines`/`references`.
 - Every **can't-miss failure class** is addressed-or-excluded with logged rationale: data loss,
   auth bypass, irreversible action, silent partial failure.
+
+The mechanical half of this gate (binary-acceptance present, no unquantified vague term, no dangling
+reference) is executable, not eyeballed: run `agent_factory.plan_gate.evaluate_plan(requirements)`
+and report its `reasons`. It is covered by the eval suite under `evals/cases/plan_gate/` (run
+`pytest tests/test_eval_cases.py`) — add a new `case.yaml` there whenever a fresh gate edge case is
+found, so the gate's coverage compounds the same way the graph does.
 
 **Stop by information-gain, not by exhaustion.** When the next question's expected information
 gain is low and the gate is reachable, say so and STOP asking — do not loop. Beware the
