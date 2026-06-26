@@ -73,6 +73,17 @@ Each pass is one slice of forward progress. Run this checklist top to bottom:
 1. **Orient.** Read the ledger (§7). Confirm Praxis tenancy: `praxis_whoami` → active org must
    be `agent-factory` (re-`select_org` if not). Confirm `general-pool` is mounted
    (`praxis_list_mounts`; re-mount read-only if missing).
+1b. **Tooling-health gate (MANDATORY — tooling stays 100% before building).** Check whether
+   praxis `HEAD` changed since the ledger's last-recorded praxis commit (`git -C
+   C:/Users/mattd/Documents/gauntlet/praxis log --oneline -1`). **If it changed** (a fix or any
+   commit landed): re-verify the whole captured-eval suite with the fast direct-check method
+   (ledger "Verified mechanics") + the 48 write-policy unit tests (§12). Record the new praxis
+   HEAD in the ledger. **Any eval that is RED — whether newly-captured or regressed by a praxis
+   change — is hardened to GREEN (§5) BEFORE any further team-app building this pass.** Burning
+   down / keeping-green the RED-eval backlog is first-class work, not only a reaction to a
+   build-time failure. If praxis HEAD is unchanged and the eval suite was green last pass, skip
+   the re-run (cheap-by-default). After a praxis code change verified green, **restart `:8000`
+   (§13)** so the live path is current.
 2. **Pick the next slice.** From the ledger's "Next" pointer / the PRD build order (§6).
 3. **Plan the slice** (factory-plan discipline):
    - Admit each requirement via `praxis_add_insight(..., category="requirement",

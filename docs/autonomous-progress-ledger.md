@@ -54,10 +54,10 @@ Test suite: **33 passing** (completion 4 + participation 4 + roster 6 + streak 6
 
 ## Plan status (Praxis `agent-factory` org / `prd-team-app` snapshot)
 
-Requirements admitted live: R1–R9, R11–R13 (bulk), R14 (partial/merged). R10 rejected
-(leaderboard, lost to R6). R4-threshold decision recorded as an episode. `general-pool` mounted
-read-only. `prd-team-app` snapshot last saved at 10 nodes **before** R11–R14 + cleanup — it is
-**stale**; re-save after the cleanup in NEXT.
+Requirements admitted live: R1–R9, R11–R13 (12 requirements, each one atomic fact). R10 rejected
+(leaderboard, lost to R6). R14 intentionally not a standalone fact (in code; episode `df98fd8b`).
+Decisions recorded as episodes. `general-pool` mounted read-only. `prd-team-app` snapshot current
+at **15 nodes** (re-saved Pass 1).
 
 ---
 
@@ -65,17 +65,24 @@ read-only. `prd-team-app` snapshot last saved at 10 nodes **before** R11–R14 +
 
 | Eval (praxis `coding_factory/`) | Captures | Status |
 |---|---|---|
-| `requirement_not_fragmented_by_distillation` | multi-sentence req splits per sentence | 🔴 RED, committed |
-| `contradicting_requirement_not_merged` | Augmenter merges a contradicting req (defeats `surface`) | 🔴 RED, committed |
-| `tabular_field_not_merged_into_incumbent` | tabular fact merges into overlapping incumbent | 🔴 RED, committed |
-| `derived_learning_not_merged_into_source` | derived learning merges into source | 🔴 RED (prior) |
+| `requirement_not_fragmented_by_distillation` | multi-sentence req splits per sentence | ✅ **GREEN** (atomic insights, #97) |
+| `contradicting_requirement_not_merged` | Augmenter merges a contradicting req (defeats `surface`) | ✅ **GREEN** (Augmenter contradiction guard, #97) |
+| `tabular_field_not_merged_into_incumbent` | tabular fact merges into overlapping incumbent | ✅ **GREEN** (Augmenter guard, #97) |
+| `derived_learning_not_merged_into_source` | derived learning merges into source | ✅ **GREEN** (feat/derived-no-merge, `c0da203`) |
 
-**All four share one root cause: the Mem0-style Augmenter over-merges.** Highest-value Praxis
-fix. A Praxis agent was actively implementing the **Augmenter / atomic-ingest fix** in the
-praxis main working tree (staged: `augmenter.py`, `prompt_injestor.py`, `parent_injestor.py`,
-`postgres_vector_graph.py`, `app.py`). **Before fixing any of these yourself, `git status` the
-praxis repo** — if that work has landed, verify the evals against it (some should flip GREEN)
-rather than writing a duplicate fix.
+**ALL FOUR captured bugs are FIXED and verified GREEN** (2026-06-26 Pass 4) — the parallel
+Praxis agent's fixes landed in praxis `main` (`f381109` Augmenter contradiction guard + atomic
+insights #97; `c0da203` derived-no-merge; `ee76f75` update_fact category). Verified via the
+direct-check method against current code; **48/48 write-policy unit tests pass (no regression)**;
+`:8000` restarted so the live factory path runs the fix.
+
+**Praxis HEAD at last verify: `5370659`.** Tooling-health gate (CONSTITUTION §1b): each pass, if
+praxis HEAD ≠ this, re-verify the eval suite + write-policy tests and harden any RED to GREEN
+before building; then update this line.
+
+**Known OPEN (not ours to fix): `matt_tax_return_ruleset_distillation`** — a real compound-rule
+distillation loss in the tax domain; a `SPLIT_PROMPT` fix regressed 9 recall checks and was
+reverted (§12). Tax domain — leave alone per owner constraint.
 
 ---
 
@@ -113,6 +120,14 @@ rather than writing a duplicate fix.
 
 ## Pass history
 
+- **2026-06-26 Pass 4 (HARDEN — tooling to 100%):** Owner flagged the loop wasn't closing evals.
+  Checked praxis git: the parallel agent's fixes had **landed** (`f381109` Augmenter contradiction
+  guard + atomic insights #97; `c0da203` derived-no-merge; `ee76f75` update_fact category; HEAD
+  `5370659`). Re-verified **all 4 captured evals → GREEN** (direct-check); **48/48 write-policy
+  unit tests pass** (no regression); **restarted `:8000`** (stale PID 5764 → 16792) so the live
+  path runs the fix. Added the **§1b tooling-health gate** to the constitution (re-verify evals
+  whenever praxis HEAD changes; harden RED→GREEN before building). No team-app build this pass —
+  tooling-first per owner. Next: resume build at R6/R7 with tooling confirmed green.
 - **2026-06-26 Pass 3:** Built **R8 submission idempotency** (`team_app/submissions.py`:
   `SubmissionStore` upsert per (user_id, team_day); 7 tests incl. an R8→R2 integration proving a
   retry stays at 50%). Suite 33 green. Episode `4dde8215` + `record_outcome(R8)`. Commit `7967d51`.
