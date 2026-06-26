@@ -54,7 +54,13 @@ Keep iterating until ALL of the following hold:
    returning empty** — it derives completeness from verified outcomes + staleness, so "done" means
    every requirement actually passed `factory-verify`, not that the agent believes so. The
    build-completeness gate (`hooks/build_completeness_gate.py`) enforces it: the worker cannot stop
-   while that query is non-empty.
+   while that query is non-empty. **Coding only starts after the preflight gate clears** — the
+   environment's derived dependencies (credentials, API keys, services, tooling — from the
+   `techDecisions`) must be provisioned (`hooks/preflight_gate.py`, factory-execute §0). And the
+   plan is **not done until it is DEPLOYED and the deployment verified** — a hard gate the same
+   build-completeness gate enforces — **unless the owner explicitly opted out** of deployment
+   (`deployment.required:false` + a recorded reason). The build itself **fans out** (parallel
+   worktree-isolated slice builders via a Workflow, §0), never a serial task queue.
 2. **The plan is hardened in Praxis.** Every PRD requirement is an atomic fact in the
    `prd-team-app` snapshot, each with a binary acceptance condition and zero unresolved
    contradictions. **Finalization is gated by `factory-review`:** the plan is not "done" until a

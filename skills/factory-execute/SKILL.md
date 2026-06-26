@@ -19,6 +19,21 @@ entry; cite the fact(s) that grounded each decision.
 
 ## 0. Run setup (once)
 
+**FIRST — Preflight: prove the environment is provisioned before any coding (GATED).** A build fails,
+or ships something that can't run, if its external dependencies aren't actually there. Before writing
+a line of app code, **DERIVE** the dependencies this build needs from the plan's `techDecisions`
+(auth provider, data store, deploy target, external services, secrets/config) — NOT a fixed list —
+and for each, define and run a concrete **check** that it is present and usable: a required env var /
+secret / API key is set, a cloud CLI is authenticated and the credential valid, a service (DB,
+queue, cache) is reachable, a CLI tool / runtime is installed at the needed version. Write the result
+to `<project>/.factory/preflight.json` (`deps:[{name,kind,check,status,remediation}]` with
+`status` ∈ present|missing|unknown|na; top-level `status` pending→ready). The **preflight gate**
+(`hooks/preflight_gate.py`) **BLOCKS coding until every dependency is `present` (or `na`)** — only
+after it reports READY do you build. For anything missing, surface EXACTLY what the user must provide
+(which key, which credential, which service) and re-check; **never stub or fake a credential** to get
+past the gate. (Unattended: if a dep only the owner can provide is missing, set `status:"parked"`
+with a `parkedReason` + `praxis_record_episode`, and find other forward progress.)
+
 - **Pin knowledge at kickoff.** Record the run's `as_of` timestamp so every retrieval this run sees
   one stable plan, even as write-backs land — runs are reproducible and replayable.
 - **Mount read-only** `general-pool` (conventions) + the project's `prd-<project>` snapshot via
@@ -61,25 +76,38 @@ Run the build as a forced loop:
    transparency: `deferredManual:[{id}]`, `excludedPostMvp:[{id}]`, `needsTriage:[{id}]` — these are
    surfaced, never folded into `incompleteCount`. This **arms the build-completeness gate**
    (`hooks/build_completeness_gate.py`).
-2. Each pass: pick the next incomplete requirement **from the build set** (dependency order, then
-   `never-built` → `regressed` → `stale`), build it (§1), gate via `factory-verify`, and on a
-   verified pass call `praxis_record_outcome(req, "succeeded")` (and `"failed"` on a failed attempt).
+2. Each pass: compute the **buildable frontier** — every incomplete build-set requirement whose
+   dependencies are already complete — and **FAN IT OUT as parallel builder agents via a Workflow**
+   (the default, not a serial todo queue — CONSTITUTION §0). One agent owns each independent slice;
+   give concurrent file-mutating builders **worktree isolation** so they don't collide. Each builder
+   builds its slice (§1), gates it via `factory-verify`, and on a verified pass calls
+   `praxis_record_outcome(req, "succeeded")` (`"failed"` on a failed attempt). Build **serially only**
+   along a genuine dependency chain, or for a trivial 1–2-slice build. (A long single-threaded task
+   queue burning down slice-by-slice is the anti-pattern — fan out the frontier.)
 3. **Re-query** `praxis_incomplete_requirements`, re-partition via `select_build_target`, and rewrite
    the manifest (bump `checkedAt`, refresh `incompleteCount`/`incomplete` over the **build set**, and
    the `deferredManual`/`excludedPostMvp`/`needsTriage` lists).
 4. Repeat. The Stop hook **blocks the turn from ending while `incompleteCount > 0`** — you cannot
-   stop or declare the build done until the build set is empty. At 0 the gate flips the manifest to
-   `done` and lets you finish. Before finishing, **surface** any `deferredManual` (hand to the human)
-   and `needsTriage` (mis-tagged — must be resolved) items; they were never built by the loop.
+   stop or declare the build done until the build set is empty. Before finishing, **surface** any
+   `deferredManual` (hand to the human) and `needsTriage` (mis-tagged — must be resolved) items; they
+   were never built by the loop.
+5. **Deploy — a hard gate (the plan is NOT done until it's deployed).** Once the build set is empty,
+   **deploy to the `techDecisions` deploy target and verify the deployment is reachable/healthy**
+   (a real check — the deployed URL responds / a health endpoint is green), then set
+   `deployment:{target, verifyCheck, status:"verified"}` in `.factory/build-status.json`. The
+   build-completeness gate will NOT flip to `done` until `deployment.status=="verified"` — **unless
+   the USER explicitly opted out**, recorded as `deployment.required:false` + a non-empty
+   `deployment.optOutReason`. Never skip deployment on your own judgment. Only at `done` does the gate
+   arm the work-review (§0c).
 
 To intentionally yield (hand back to the human, or a hard blocker you can't pass), set
 `status:"paused"` in the manifest and say why — never fake `incompleteCount`. Completeness is
 outcome-grounded, so the only honest way to reach 0 is to actually build and verify the whole build
 set.
 
-**Fan out via Workflow where it helps (the default for a substantial build; CONSTITUTION §0).** The
-forced loop above is *serial by default*, but for a substantial build the build set is a fan-out
-target: author and run a Workflow with **parallel per-screen / per-slice builders** (one agent owns
+**Fan out via Workflow — the DEFAULT for a substantial build (CONSTITUTION §0), not an option.** Do
+NOT walk the build set as a serial task queue. For any build past a couple of slices the build set is
+a fan-out target: author and run a Workflow with **parallel per-screen / per-slice builders** (one agent owns
 each independent slice — give concurrent file-mutating builders **worktree isolation** so they don't
 collide), an **adversarial reviewer per slice** that tries to falsify the slice rather than bless it,
 and **loop-until-dry** gap-finding — keep fanning out until a pass surfaces no new incomplete

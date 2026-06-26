@@ -128,6 +128,28 @@ def main() -> None:
                f".factory/build-status.json before stopping.")
 
     if count <= 0:
+        # The build set is verified-complete — but the plan is NOT done until it is DEPLOYED and
+        # the deployment verified, UNLESS the user explicitly opted out. Deployment is a hard gate.
+        dep = man.get("deployment") or {}
+        required = dep.get("required") is not False  # default True; only an explicit False opts out
+        dep_status = str(dep.get("status", "pending")).lower()
+        opt_out_reason = str(dep.get("optOutReason", "")).strip()
+        if required and dep_status != "verified":
+            attempts = int(man.get("attempts", 0)) + 1
+            man["attempts"] = attempts
+            try:
+                with open(manifest_path, "w", encoding="utf-8") as fh:
+                    json.dump(man, fh, indent=2)
+            except Exception:
+                pass
+            _block(
+                f"build-completeness gate: build set for {project} is verified-complete, but the "
+                f"plan is NOT done until it is DEPLOYED and verified (deployment.status is "
+                f"'{dep_status}', not 'verified'). Deploy to the techDecisions target, verify the "
+                f"deployment is reachable/healthy, and set deployment.status='verified' in "
+                f".factory/build-status.json. To skip deployment you need the USER's explicit "
+                f"opt-out: deployment.required=false WITH a deployment.optOutReason — never skip it "
+                f"on your own." + _transparency_note())
         man["status"] = "done"
         try:
             with open(manifest_path, "w", encoding="utf-8") as fh:
@@ -136,9 +158,12 @@ def main() -> None:
             pass
         # Build finished — arm the holistic work-review gate before "shipped".
         _arm_review(cwd, "work", project)
+        deploy_note = (f" Deployment: VERIFIED." if (required and dep_status == "verified")
+                       else f" Deployment: opted out ({opt_out_reason or 'no reason given'})."
+                       if not required else "")
         _allow(f"build-completeness gate: PASSED — the build target (mvp+automated) for {project} "
-               f"is empty. Every targeted requirement is verified-complete. Now run the "
-               f"work-review (factory-review) the review_gate just armed before shipping."
+               f"is empty; every targeted requirement is verified-complete.{deploy_note} Now run "
+               f"the work-review (factory-review) the review_gate just armed before shipping."
                + _transparency_note())
 
     attempts = int(man.get("attempts", 0)) + 1
