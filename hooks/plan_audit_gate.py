@@ -25,6 +25,9 @@ What it checks (a mix of independent + recorded, like the wireframe gate):
     * technical decisions (DYNAMIC, no fixed list): `techDecisions` non-empty and every entry
       closed (resolved / deferred / na) with a decision/rationale, AND `techDecisionsCritic`
       ran with `missingFound: []` and `passes: true` (an independent pass found nothing missing)
+    * test strategy (DERIVED per platform, mandatory): `testStrategy.layers` non-empty + a `ci`
+      block, each closed with a binary acceptance, AND `techDecisionsCritic.testStrategyComplete`
+      true (no untested/under-tested plan is blessed — Step 3a)
 
 Manifest schema (written by factory-audit):
 {
@@ -185,6 +188,38 @@ def main() -> None:
     elif not critic.get("passes"):
         misses.append("techDecisionsCritic.passes != true — the completeness critic has not signed "
                       "off that the technical decisions are complete for this system")
+
+    # 2c) test strategy (DERIVED per platform, MANDATORY): a non-empty set of test layers + CI,
+    # each with a binary CI-enforced acceptance, and the critic confirming it's complete for THIS
+    # platform. No project is blessed on an untested / under-tested plan (factory-audit Step 3a).
+    ts = man.get("testStrategy") or {}
+    layers = ts.get("layers") or []
+    if not layers:
+        misses.append("testStrategy.layers is empty — derive the platform-appropriate test layers "
+                      "for THIS system (unit / integration / e2e / device-or-simulator / contract / "
+                      "eval ... as fits) and give each a CI-enforced binary acceptance")
+    for L in layers:
+        name = L.get("layer", "?")
+        st = str(L.get("status", "open")).lower()
+        if st not in TECH_CLOSED:
+            misses.append(f"test layer '{name}': open (status={st!r}) — resolve / defer / na")
+        elif not str(L.get("acceptance", "")).strip():
+            misses.append(f"test layer '{name}': {st} but no binary (CI-enforced) acceptance recorded")
+    ci = ts.get("ci") or {}
+    if not ci:
+        misses.append("testStrategy.ci is missing — record the CI/CD setup (what runs, what it "
+                      "gates) with a binary acceptance condition")
+    else:
+        cst = str(ci.get("status", "open")).lower()
+        if cst not in TECH_CLOSED:
+            misses.append(f"testStrategy.ci: open (status={cst!r}) — resolve / defer / na")
+        elif not (str(ci.get("acceptance", "")).strip() or str(ci.get("decision", "")).strip()):
+            misses.append("testStrategy.ci: closed but no decision/acceptance recorded")
+    if not critic.get("testStrategyComplete"):
+        misses.append("techDecisionsCritic.testStrategyComplete != true — the critic has not signed "
+                      "off that the test strategy is complete & appropriate for this platform "
+                      "(e.g. a mobile build with no device/simulator e2e layer, or any project with "
+                      "no CI gate)")
 
     # 3) per-requirement challenge coverage + (rigorous) gap-lenses
     for r in reqs:

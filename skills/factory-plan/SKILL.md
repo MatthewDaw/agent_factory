@@ -97,6 +97,19 @@ Work one requirement (or one tight cluster) at a time. For each, run these moves
 **one question per turn** using the blocking question tool, single-select with a free-text escape,
 and prefer drafting-for-the-human-to-judge over asking-from-blank.
 
+**Fan out via Workflow where it helps (the default for a substantial hardening pass; CONSTITUTION
+§0).** This loop is not a solo grind — author and run a Workflow to parallelize the expensive parts:
+**parallel research sub-agents** to resolve underspecification (the move-2a/underspecification-trigger
+"research-resolvable" branch, run as a fan-out instead of one serial read), a **judge panel** to weigh
+a contested fork before it reaches the human (move 2c / a genuine product fork), and an **adversarial
+reviewer** over the candidate requirement set whose job is to falsify — surfacing missing actors,
+unbounded conditions, and dangling concepts as contradicting facts (move 2c). Run gap-finding
+**loop-until-dry**: keep fanning out challenge passes until one surfaces nothing new.
+**The human-controlled gate is untouched:** workflows *inform* — they research, challenge, and rank —
+but they never settle a contradiction, author a fact, or clear the done-gate. The human still answers,
+still resolves each pending pair, and still clears Step 3. One decision-maker per slice holds: the
+workflow orchestrates finders/reviewers, but you remain the sole agent that writes to the graph.
+
 *Researching to resolve a question* (the PRD's other sections, the codebase, prior snapshots) may
 use the **read-only retrieval sub-agent** (factory-execute §1a) so bulk reading doesn't crowd the
 planning context — but **read any file the human or the PRD names explicitly fully in your own

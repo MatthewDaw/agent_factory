@@ -86,6 +86,39 @@ Resolve each like an underspecified requirement (PRD → mounted conventions →
 `deferred` (owned-decision + reason), or `na` (genuinely not applicable + reason). None may be
 silently skipped, and a default may never paper over a genuine owner fork (anti-masking).
 
+### Step 3a — Test strategy is mandatory (derive the layers for THIS system)
+
+A PRD almost never says *how* the product is tested — yet a plan with no test strategy (or one that
+skips a layer this platform lives or dies on) is exactly the silent gap mechanical gates wave
+through. So an explicit, **platform-appropriate, automated test strategy + CI is a MANDATORY outcome
+of every audit**: no project can be blessed on an untested or under-tested plan. Treat it like the
+tech sweep — **derive the right set of test LAYERS for THIS system from the PRD, the requirements,
+and the *kind* of software it is; there is NO fixed checklist.** A static "unit + integration + e2e"
+list is the wrong altitude — the *real* set depends on where this product's risk actually lives.
+
+*Illustrative only* (the layers differ per project kind — derive, don't copy):
+- a **library** → unit + public-API/contract tests + semver-aware release CI;
+- a **web app** → unit + integration + e2e on the critical flows + CI/CD that gates merges;
+- a **MOBILE app** → unit + integration + UI/e2e on a real device or simulator + CI that builds/signs
+  the app (the device/simulator layer is the one a generic plan silently omits — and it's load-bearing);
+- a **CLI** → unit + integration + a packaging/install smoke test;
+- a **data/ML pipeline** → unit + data-contract/schema tests + pipeline integration + eval gates on
+  model quality.
+These are **prompts, not the list.** Derive the real set for *this* build — the layers, the harness,
+and where each runs (local, CI, device farm, simulator).
+
+Record **each chosen layer AND the CI/CD setup** — in `techDecisions` (dimension `testing` / `ci`)
+or as first-class requirements — and **every one must carry a BINARY acceptance condition**, the same
+bar as any requirement. Examples of the shape (not the content):
+- "CI runs the unit+integration suite on every push and **blocks merge on red**";
+- "the e2e suite covers the critical user flows on a simulator **in CI** and blocks release on
+  failure";
+- "the packaging smoke test installs the built artifact in a clean environment in CI."
+This strategy is **what factory-verify gates the build on** — factory-verify is the oracle, and the
+test strategy is the contract that says *which* automated suites, at *which* layers, must be green
+before anything is considered done. A layer with no binary, CI-enforced condition is not a strategy;
+it's a hope, and the gate treats it as missing.
+
 **Then run the completeness critic — this is the dynamic pushback you asked for.** Dispatch an
 *independent* cold-eyes sub-agent (`factory-execute` §1a) whose only job is: *"to actually build
 this system, what technical decisions are still unmade?"* It reads the PRD + requirements + the
@@ -94,6 +127,15 @@ those too, and **loop until it returns nothing new** (loop-until-dry). Record th
 `techDecisionsCritic` `{ran, missingFound, passes}`. This is how the system *finds* the missing
 decisions for whatever is being built — rather than checking a static list — and the gate will not
 pass until the critic has signed off with nothing missing.
+
+The critic must **explicitly interrogate the test strategy**, not just the build decisions: *"is the
+test strategy COMPLETE and APPROPRIATE for THIS platform?"* It derives the layers this kind of
+software actually demands and flags any that are absent or unenforced — e.g. a **mobile app with no
+device/simulator UI/e2e layer**, a library with no public-API/contract tests, a data pipeline with no
+data-contract or eval gates, or **any project with no CI** or with a layer that has no binary,
+merge-/release-blocking acceptance condition. Each gap it raises is added and resolved like the
+others, and the same **loop-until-dry** applies — the critic does not sign off while a platform-
+appropriate layer or the CI gate is missing or unenforced.
 
 ## Step 4 — Emit the audit artifact (the gated forcing function)
 
@@ -111,7 +153,12 @@ from ending** (so you can't `save_snapshot` and call it hardened) until ALL hold
 - rigorous mode: every gap-lens logged for every requirement;
 - the **technical decisions** are complete for this system: `techDecisions` is non-empty and every
   entry is closed (resolved / deferred-with-reason / na-with-reason), AND the independent
-  `techDecisionsCritic` ran and signed off with nothing missing (`passes: true`, `missingFound: []`).
+  `techDecisionsCritic` ran and signed off with nothing missing (`passes: true`, `missingFound: []`);
+- the **test strategy** is present and platform-appropriate: a non-empty `testStrategy` whose derived
+  layers + the CI/CD setup each carry a **binary, CI-enforced acceptance condition**, and the critic
+  confirmed it is complete and appropriate for this kind of software (no missing platform-required
+  layer — e.g. a mobile build with no device/simulator e2e — and no project without CI). A plan with
+  no test strategy, or with a layer lacking a binary gate, is **under-tested and cannot be blessed**.
 
 ```json
 {
@@ -135,7 +182,17 @@ from ending** (so you can't `save_snapshot` and call it hardened) until ALL hold
     {"dimension": "data-store", "decision": "Postgres + standard migrations", "source": "default (PRD silent)", "status": "resolved"}
     // ... however many THIS system needs — dynamically derived, not a fixed list
   ],
-  "techDecisionsCritic": {"ran": true, "missingFound": [], "passes": true}
+  "testStrategy": {
+    // layers DERIVED for this system (a web app here) — not a fixed checklist
+    "layers": [
+      {"layer": "unit", "acceptance": "unit suite runs on every push in CI and blocks merge on red", "status": "resolved"},
+      {"layer": "integration", "acceptance": "integration suite (db + api) runs in CI and blocks merge on red", "status": "resolved"},
+      {"layer": "e2e", "acceptance": "e2e suite covers the critical user flows and blocks merge on red", "status": "resolved"}
+    ],
+    "ci": {"decision": "GitHub Actions: build + unit+integration+e2e gate every PR; deploy on green main", "acceptance": "merge is blocked unless all suites are green", "status": "resolved"}
+    // a MOBILE build would instead derive a device/simulator UI/e2e layer + a build/sign CI step
+  },
+  "techDecisionsCritic": {"ran": true, "missingFound": [], "testStrategyComplete": true, "passes": true}
 }
 ```
 
@@ -176,4 +233,6 @@ Mode-aware, like the rest of this skill:
 - Never `save_snapshot` (bless the plan) with the audit `status:"open"` or any open challenge.
 - Never let the agent that drafted a requirement be its *only* skeptic — use the cold-eyes sub-agent.
 - Never dismiss a challenge without a recorded reason, or default over a genuine product fork.
+- Never bless a plan with no automated test strategy, a platform-required layer missing (e.g. a
+  mobile build with no device/simulator e2e), or any test layer / CI gate lacking a binary condition.
 - Never hand-edit the manifest to `passed` — the gate (with its independent `plan_gate` re-run) decides.

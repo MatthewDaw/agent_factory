@@ -77,6 +77,21 @@ To intentionally yield (hand back to the human, or a hard blocker you can't pass
 outcome-grounded, so the only honest way to reach 0 is to actually build and verify the whole build
 set.
 
+**Fan out via Workflow where it helps (the default for a substantial build; CONSTITUTION §0).** The
+forced loop above is *serial by default*, but for a substantial build the build set is a fan-out
+target: author and run a Workflow with **parallel per-screen / per-slice builders** (one agent owns
+each independent slice — give concurrent file-mutating builders **worktree isolation** so they don't
+collide), an **adversarial reviewer per slice** that tries to falsify the slice rather than bless it,
+and **loop-until-dry** gap-finding — keep fanning out until a pass surfaces no new incomplete
+requirement. This does **not** loosen the gates or the single-decision-maker discipline: the
+**completeness gate** (§0b) and the **work-review gate** (§0c) still hold exactly as written, and the
+**one-decision-maker-per-slice** rule is preserved — each builder owns its slice end-to-end (decides,
+edits, writes its slice's learnings, commits its slice), and the read-only retrieval sub-agent rule
+(§1a) is unchanged. Workflows *orchestrate* builders that each own a slice; they never reintroduce a
+crew that splits the decision for a single slice across agents. Re-query
+`praxis_incomplete_requirements` and re-partition after each fan-out batch lands, same as the serial
+loop.
+
 ## 0c. Work-review (auto, the ship gate)
 
 Once the build-completeness gate flips the manifest to **`done`** (build **FINISHED** — the build

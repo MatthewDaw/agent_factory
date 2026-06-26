@@ -12,6 +12,37 @@ This file governs **process**, not product design. Read it, read the ledger
 
 ---
 
+## 0. Default to multi-agent orchestration (ultracode)
+
+**For any substantial slice of planning or building, the default is to AUTHOR AND RUN A WORKFLOW —
+not to do it solo.** Reach for the Workflow tool (ultracode) first: fan out finders, researchers,
+builders, and reviewers **in parallel**, and pair every gate with **adversarial verification**.
+Solo, single-threaded work is reserved for the **trivial, mechanical, or conversational** steps
+(a one-line edit, a status read, a single question) — it is the exception, not the rule.
+
+Concretely, lean on:
+- **Parallel research** — fan out multiple research sub-agents to resolve underspecification and
+  gather prior art at once, rather than reading serially.
+- **Judge panels** — for a contested fork or a candidate set, convene a panel and weigh verdicts,
+  rather than deciding from a single viewpoint.
+- **Loop-until-dry** — keep fanning out gap-finders until a pass surfaces nothing new, so coverage
+  is exhausted, not estimated.
+- **Adversarial review** — put a skeptical reviewer over every candidate plan/slice whose job is to
+  falsify it, not to bless it.
+
+This composes with — it does not replace — the rest of this constitution. The single-decision-maker
+doctrine still holds **per slice**: a workflow *orchestrates* builders and reviewers that each own
+their slice, but exactly one agent decides, edits, writes to Praxis, or commits for any given slice
+(the read-only retrieval sub-agent rule, factory-execute §1a, is unchanged). The gates pair
+naturally with fan-out: the **audit** (factory-audit / §4 step 8b) and the **review** gates
+(`factory-review`, §1 item 2) are exactly where a panel of fanned-out reviewers earns its keep —
+the gate stays human-controlled (or, unattended, defers per §3), and the workflow *informs* it.
+
+When a pass is non-trivial and you find yourself about to do it solo, stop and ask: *should this be
+a workflow?* Usually the answer is yes.
+
+---
+
 ## 1. North Star (Definition of Done)
 
 Keep iterating until ALL of the following hold:

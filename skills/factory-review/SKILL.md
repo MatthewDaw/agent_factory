@@ -33,10 +33,51 @@ whole fact-set / whole diff with cold eyes. This skill is that panel, run at two
 
 `factory-verify` already records the core lesson: **a model judging its own output inflates its own
 pass rate.** A holistic review the builder runs on itself is the weak kind. So the panel is
-**separate sub-agents** spawned via the **Agent tool**, each a different installed
+**separate sub-agents** spawned via the **Agent tool**, each a different
 compound-engineering reviewer with its own lens — they did not write the plan or the code, so they
-challenge harder and disagree with each other. **Do not reinvent reviewers**; leverage the ones that
-are already installed (listed per mode below).
+challenge harder and disagree with each other. **Do not reinvent reviewers**; the
+compound-engineering reviewers (listed per mode below) ARE the panel.
+
+### compound-engineering is the DEFAULT panel — and a declared dependency
+
+The cold-eyes panel is **not** a "use them if installed" preference — the **compound-engineering**
+plugin's reviewer agents are the **default, required panel** for both modes. The factory **declares
+this as a hard plugin dependency** so Claude Code resolves and installs it automatically:
+
+- `\.claude-plugin/plugin.json` and the marketplace entry declare
+  `dependencies: [{ "name": "compound-engineering", "marketplace": "compound-engineering-plugin" }]`;
+- the root marketplace (`agent-factory-local`) allows the cross-marketplace pull via
+  `allowCrossMarketplaceDependenciesOn: ["compound-engineering-plugin"]`.
+
+On install/enable of agent-factory, Claude Code auto-installs and enables compound-engineering. This
+is **general** — it holds for any project the factory runs in, not one app. The factory's **eval
+engine already leverages compound-engineering's reviewers**; declaring the dependency here and
+defaulting the panel to those reviewers simply **formalizes** that existing reliance so the gate can
+depend on it.
+
+### PRESENCE CHECK — run at panel time, before deciding the phase is done
+
+Before spawning the panel (in **either** mode), **verify the compound-engineering reviewer agents
+for this mode are actually available** (the subagent types in the table below resolve via the Agent
+tool / `/code-review`). The dependency declaration makes this true automatically, but the check is
+the backstop for a half-installed or disabled environment:
+
+- **Present** → spawn the panel as normal.
+- **Absent** (compound-engineering not installed/enabled, or its reviewer subagents do not resolve)
+  → **do NOT proceed and do NOT skip the panel**. The gate must **not** pass on a skipped panel.
+  Set `panelRan:false`, leave `status:"pending"`, and surface the remediation to install the
+  declared dependency:
+
+  ```bash
+  claude plugin marketplace add EveryInc/compound-engineering-plugin
+  claude plugin install compound-engineering@compound-engineering-plugin
+  ```
+
+  (or `/reload-plugins`, which re-resolves the declared dependency from the configured marketplace).
+  A missing panel is a **blocked phase**, never a silent pass — `panelRan:false` keeps `review_gate`
+  BLOCKING. Absence is distinct from a deliberate, recorded **skip** (small/low-risk policy below):
+  you may only mark `status:"skipped"` through that explicit policy, never because the reviewers
+  weren't there.
 
 ---
 
@@ -51,8 +92,8 @@ fact-set + tech decisions** as one artifact.
 `.factory/plan-audit.json`, plus the PRD prose and wireframe. Hand each reviewer the **whole** set,
 not one requirement.
 
-**Lenses (≥1 independent reviewer each — prefer the installed ce plan reviewers, spawn via the Agent
-tool with these subagent types):**
+**Lenses (≥1 independent reviewer each — the DEFAULT panel is the compound-engineering plan
+reviewers below, spawned via the Agent tool with these subagent types; run the PRESENCE CHECK first):**
 
 | Lens | ce subagent type | Catches (e.g.) |
 |---|---|---|
@@ -75,8 +116,9 @@ diff / codebase** as one artifact — emergent defects across files, not one tas
 **Surface the panel reads:** the full diff for the build (`git diff` against the build's base) and
 the touched modules in context.
 
-**Lenses (≥1 independent reviewer each — prefer the installed ce code reviewers, spawn via the Agent
-tool with these subagent types; or invoke the `/code-review` skill which orchestrates them):**
+**Lenses (≥1 independent reviewer each — the DEFAULT panel is the compound-engineering code
+reviewers below, spawned via the Agent tool with these subagent types, or the `/code-review` skill
+which orchestrates them; run the PRESENCE CHECK first):**
 
 | Lens | ce subagent type |
 |---|---|
@@ -165,7 +207,9 @@ what makes it non-skippable under pressure — the same enforcement shape as
 - `status`: `"pending"` (gate armed) | `"done"` | `"skipped"`.
 - `skipReason`: REQUIRED non-empty when `status=="skipped"`.
 - `size.metric`: `"changed-requirements"` | `"diff-lines"` | `"..."`.
-- `panelRan`: the independent cold-eyes panel actually ran (≥1 reviewer per lens).
+- `panelRan`: the independent cold-eyes panel actually ran (≥1 compound-engineering reviewer per
+  lens). Stays `false` when the PRESENCE CHECK fails (compound-engineering absent) — install the
+  declared dependency and re-run; never flip it true or `skip` to get past a missing panel.
 - `findings[].severity`: `"high"` | `"med"` | `"low"`; `findings[].status`: `"open"` | `"resolved"`
   | `"accepted"`.
 
@@ -200,6 +244,8 @@ is the one thing the gate now structurally prevents.
   ledger note).
 - **Never bless with open findings** — `status:"done"` requires every finding `resolved`/`accepted`
   with a non-empty `resolution`.
+- **Never pass on a missing panel** — if the compound-engineering reviewers aren't available, the
+  phase is BLOCKED (install the declared dependency); absence is never a skip.
 
 ## Compounding
 

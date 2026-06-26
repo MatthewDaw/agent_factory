@@ -49,6 +49,31 @@ For how to run Praxis and register its MCP server, follow the setup docs in the
 how the factory connects (HTTP vs MCP, local vs prod backends) and the tenancy rules it
 relies on.
 
+## Dependency: compound-engineering (cold-eyes review panel)
+
+The factory's holistic **cold-eyes review panel** (`skills/factory-review`) uses the
+[compound-engineering](https://github.com/EveryInc/compound-engineering-plugin) plugin's reviewer
+agents as its **default, required panel** — for both plan-review (coherence / feasibility / scope /
+security / product / design lenses) and work-review (architecture / correctness / security /
+maintainability / performance / testing). The factory's eval engine already leverages those
+reviewers; this **formalizes** that reliance by declaring compound-engineering as a hard plugin
+dependency, so Claude Code resolves and installs it automatically:
+
+- [.claude-plugin/plugin.json](/.claude-plugin/plugin.json) and the
+  [.claude-plugin/marketplace.json](/.claude-plugin/marketplace.json) entry declare
+  `dependencies: [{ "name": "compound-engineering", "marketplace": "compound-engineering-plugin" }]`;
+- the local marketplace allows the cross-marketplace pull via
+  `allowCrossMarketplaceDependenciesOn: ["compound-engineering-plugin"]`.
+
+Installing/enabling `agent-factory` auto-installs `compound-engineering`. If it is ever missing, the
+review panel performs a **presence check** and **blocks the phase** (it never silently skips the
+panel) until you install the dependency:
+
+```
+/plugin marketplace add EveryInc/compound-engineering-plugin
+/plugin install compound-engineering@compound-engineering-plugin
+```
+
 ## Usage
 
 Once the plugin is installed and Praxis is reachable, Claude Code activates these skills
