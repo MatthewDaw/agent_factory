@@ -127,6 +127,24 @@ When a Praxis or factory failure appears:
      rather than writing a duplicate, conflicting fix.
    - Otherwise make the **minimal** fix in the relevant Praxis module. Do not regress the
      positive-merge / additive cases (`matt/augment_additive_merge` etc.).
+   - **Strongly prefer a STRUCTURAL fix over a PROMPT edit — this is the default stance.** A
+     structural change is deterministic, local, and testable: a guard or precondition, a
+     slot/flag check, a write-policy ordering rule, a typed exemption (e.g. "a write carrying
+     `derived_from` never merges"; "never merge across distinct `category`"; "a flagged
+     contradiction is never additively merged"), an explicit code branch, or a new parameter.
+     Reach for those first, and second, and third. **Editing a judge/distill PROMPT**
+     (`SPLIT_PROMPT`, the augment / conflict / merge / aspect judges, etc.) **is a last resort**,
+     justified only for a genuinely narrow edge case that has no structural handle. Two reasons
+     it's costly: (1) the prompt text is part of the cassette key, so any edit invalidates
+     fixtures en masse and forces a broad re-record; (2) its blast radius is wide and hard to
+     predict — a single `SPLIT_PROMPT` tweak in this codebase already regressed 9 unrelated
+     recall checks (42→35) and had to be reverted (§12). Prompt-tuning trades a visible local
+     win for invisible distributed losses; structural fixes don't. If a prompt edit truly seems
+     unavoidable: scope it as tightly as possible, re-verify the FULL sibling + recall set
+     (§12) before committing, and if it regresses anything at all, **revert it and leave the
+     eval RED with a note** rather than shipping a net-negative change. When unsure whether a
+     clean structural fix exists, prefer leaving the eval RED + a workaround (§3 timebox) over a
+     speculative prompt change.
    - Re-run the new eval's check → it must flip **RED→GREEN**. Then run the broader
      `coding_factory/` + `matt/` checks you can run offline to confirm no regression
      (**§12** lists the exact sibling cases + unit tests, and how to tell a real failure from a
