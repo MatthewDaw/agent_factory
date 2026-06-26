@@ -18,8 +18,12 @@ Keep iterating until ALL of the following hold:
 
 1. **The product is built and working locally.** Every requirement in the PRD
    (`docs/inspiration/`) is implemented in the team-app repo
-   (`C:/Users/mattd/Documents/gauntlet/team-app`) and the full test suite passes
-   (`python -m pytest -q` green), with a runnable local entry point.
+   (`C:/Users/mattd/Documents/gauntlet/team-app`) and the full test suite passes, with a runnable
+   local entry point. The **mechanical test of this is `praxis_incomplete_requirements(prd-team-app)`
+   returning empty** — it derives completeness from verified outcomes + staleness, so "done" means
+   every requirement actually passed `factory-verify`, not that the agent believes so. The
+   build-completeness gate (`hooks/build_completeness_gate.py`) enforces it: the worker cannot stop
+   while that query is non-empty.
 2. **The plan is hardened in Praxis.** Every PRD requirement is an atomic fact in the
    `prd-team-app` snapshot, each with a binary acceptance condition and zero unresolved
    contradictions.
@@ -84,7 +88,10 @@ Each pass is one slice of forward progress. Run this checklist top to bottom:
    build-time failure. If praxis HEAD is unchanged and the eval suite was green last pass, skip
    the re-run (cheap-by-default). After a praxis code change verified green, **restart `:8000`
    (§13)** so the live path is current.
-2. **Pick the next slice.** From the ledger's "Next" pointer / the PRD build order (§6).
+2. **Pick the next slice.** The next *incomplete* requirement from
+   `praxis_incomplete_requirements(prd-team-app)` (dependency order; then never-built → regressed →
+   stale). §6's build order is a priority hint, not the source of truth — the completeness query is.
+   Keep the build-status manifest (factory-execute §0b) current so the gate sees real progress.
 3. **Plan the slice** (factory-plan discipline). *Review leverage is inverse to distance from
    execution — a bad requirement spawns thousands of bad lines, a bad plan hundreds, a bad line of
    code just one — so spend the rigor here, on the facts, not on re-reading generated code:*

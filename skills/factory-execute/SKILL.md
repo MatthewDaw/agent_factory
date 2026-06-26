@@ -24,8 +24,34 @@ entry; cite the fact(s) that grounded each decision.
 - **Mount read-only** `general-pool` (conventions) + the project's `prd-<project>` snapshot via
   `factory-memory`. The live graph is this run's scratch; the plan + conventions are mounted, not
   copied in.
-- **Walk the task DAG** the plan produced, in dependency order. Do tasks **serially** (single agent;
-  also respects the serial-write rule).
+- **Walk the work by completeness, not a static list:** the next task is the next *incomplete*
+  requirement from `praxis_incomplete_requirements(prd-<project>)` (§0b), in dependency order. Do
+  tasks **serially** (single agent; also respects the serial-write rule).
+
+## 0b. Drive to completeness (the worker is FORCED to iterate until every requirement is done)
+
+The build is **not done when the agent thinks so** — it's done when
+**`praxis_incomplete_requirements(prd-<project>)` returns empty** (PR #106). That query derives
+completeness from *verified outcomes + staleness* (never-built / regressed / stale), so a
+requirement only counts complete once it has actually passed `factory-verify`.
+
+Run the build as a forced loop:
+1. At build start, write `<project>/.factory/build-status.json` with `status:"building"`, the
+   `project`, and the current `praxis_incomplete_requirements` result (`incompleteCount`,
+   `incomplete:[{id,reason}]`). This **arms the build-completeness gate**
+   (`hooks/build_completeness_gate.py`).
+2. Each pass: pick the next incomplete requirement (dependency order, then `never-built` →
+   `regressed` → `stale`), build it (§1), gate via `factory-verify`, and on a verified pass call
+   `praxis_record_outcome(req, "succeeded")` (and `"failed"` on a failed attempt).
+3. **Re-query** `praxis_incomplete_requirements` and rewrite the manifest (bump `checkedAt`, refresh
+   `incompleteCount`/`incomplete`).
+4. Repeat. The Stop hook **blocks the turn from ending while `incompleteCount > 0`** — you cannot
+   stop or declare the build done until the query is empty. At 0 the gate flips the manifest to
+   `done` and lets you finish.
+
+To intentionally yield (hand back to the human, or a hard blocker you can't pass), set
+`status:"paused"` in the manifest and say why — never fake `incompleteCount`. Completeness is
+outcome-grounded, so the only honest way to reach 0 is to actually build and verify everything.
 
 ## 1. Per-task loop
 
