@@ -8,17 +8,13 @@ Update at the end of every pass. Newest entries at the bottom of each section.
 
 ## NEXT (the resume pointer)
 
-1. **Build R9 (captain message + optional approval)** — a captain may post one leader message
-   scoped to their own team; when the coach requires approval, it stays hidden until a coach
-   approves. Add `team_app/messages.py` (a message store with post/approve/visible-to-team,
-   role-gated via `team_app/roles.py`) + tests.
-2. Then **R11 (weekly theme)** — exactly one active theme per (team, week); **R12 (daily prompt)**
+1. **Build R11 (weekly theme)** — exactly one active theme per (team, week); **R12 (daily prompt)**
    — exactly one prompt per (team, date), response_type ∈ {text_short, multiple_choice,
    rating_1_5, rating_1_10}; **R13 (notifications)** — ≤1 daily + ≤1 streak-save reminder, never
    implying individual noncompliance.
-3. Then **auth + roles wiring** (PRD §1) and a **thin runnable local entry point** (e.g. a single
+2. Then **auth + roles wiring** (PRD §1) and a **thin runnable local entry point** (e.g. a single
    `team_app/app.py` that assembles a team-day view from the stores) so the app "runs locally."
-4. Continue passes until DoD (CONSTITUTION §1). Build order: CONSTITUTION §6.
+3. Continue passes until DoD (CONSTITUTION §1). Build order: CONSTITUTION §6.
 
 **Graph is clean as of the last pass** (R5/R8 repaired, R14 strays removed, snapshot re-saved at
 15 nodes). R10 (leaderboard) correctly stays `rejected`. R14 (data model) is intentionally NOT a
@@ -42,7 +38,7 @@ standalone Praxis requirement — realized in code (episode `df98fd8b`).
 | R6  | Athlete visibility (aggregate only) | `team_app/roles.py`+`views.py` | ✅ built, green |
 | R7  | Coach visibility (per-athlete) | `team_app/roles.py`+`views.py` | ✅ built, green |
 | R8  | Submission idempotency | `team_app/submissions.py` | ✅ built, green |
-| R9  | Captain message + approval | — | ⛔ todo |
+| R9  | Captain message + approval | `team_app/messages.py` | ✅ built, green |
 | R11 | Weekly theme | — | ⛔ todo |
 | R12 | Daily prompt | — | ⛔ todo |
 | R13 | Notifications | — | ⛔ todo |
@@ -50,8 +46,8 @@ standalone Praxis requirement — realized in code (episode `df98fd8b`).
 | —   | Auth + roles | — | ⛔ todo (PRD §1) |
 | —   | Local runnable entry point | — | ⛔ todo |
 
-Test suite: **38 passing** (completion 4 + participation 4 + roster 6 + streak 6 + day_boundary 6
-+ submissions 7 + views/roles 5) as of last build.
+Test suite: **46 passing** (completion 4 + participation 4 + roster 6 + streak 6 + day_boundary 6
++ submissions 7 + views/roles 5 + messages 8) as of last build.
 
 ## Plan status (Praxis `agent-factory` org / `prd-team-app` snapshot)
 
@@ -121,6 +117,11 @@ reverted (§12). Tax domain — leave alone per owner constraint.
 
 ## Pass history
 
+- **2026-06-26 Pass 6:** §1b gate: praxis HEAD unchanged (`5370659`) → tooling still green,
+  skipped re-verify. Built **R9 captain/coach message + optional approval** (`team_app/messages.py`:
+  role-gated post, coach-only approve, team-scoped visibility, single-active-captain supersede,
+  expiry; 8 tests). Suite 46 green. Episode `5282659b` + `record_outcome(R9)`. Commit `a10d465`.
+  No bug. Next: R11/R12/R13.
 - **2026-06-26 Pass 5:** Switched loop cadence to **every 15 min** (cron `797c0c14`; old
   `1defb1e0` deleted; cron prompt now runs the §1b gate first). Built **R6/R7 role-aware
   visibility** (`team_app/roles.py` + `views.py`; `SubmissionStore.for_day_by_user`; 5 tests —
