@@ -12,21 +12,16 @@ Update at the end of every pass. Newest entries at the bottom of each section.
 nodes / 0 contradictions, all 4 evals GREEN). Remaining in-scope logic slices, then a scoped DoD
 audit (scope boundary = episode `82608710`):
 
-1. **§8 Metrics** — pure functions over submission history: activation (completed Day 1),
-   retention (returned Day 3 / Day 7), adherence (% completing ≥4 days/week), participation
-   distribution, drop-off point (which block: prompt/checklist/ratings). Add `team_app/metrics.py`
-   + tests.
-2. **§2C Team habit checklist (TeamHabits)** — a store for a team's 3–6 habit items and which a
+1. **§2C Team habit checklist (TeamHabits)** — a store for a team's 3–6 habit items and which a
    submission checked (recorded, does NOT affect completion per R1). Add `team_app/habits.py` + tests.
-3. **§6 Admin mutations** — roster active/inactive toggle + captain assignment (role mutation),
+2. **§6 Admin mutations** — roster active/inactive toggle + captain assignment (role mutation),
    building on `roster.py`/`roles.py`. Add a small `team_app/admin.py` + tests.
-4. **Scoped DoD audit** — declare auth/login, DB, web/mobile UI, offline sync, deploy
+3. **Scoped DoD audit** — declare auth/login, DB, web/mobile UI, offline sync, deploy
    out-of-local-scope (infra) with the episode-`82608710` rationale; confirm all in-scope logic
    built+green, plan hardened, evals GREEN, learnings compounded; write the final handoff.
 
-**Graph is clean as of the last pass** (R5/R8 repaired, R14 strays removed, snapshot re-saved at
-15 nodes). R10 (leaderboard) correctly stays `rejected`. R14 (data model) is intentionally NOT a
-standalone Praxis requirement — realized in code (episode `df98fd8b`).
+**Graph clean** (zero contradictions). `prd-team-app` snapshot @23 nodes. R10 stays `rejected`;
+R14 realized in code (episode `df98fd8b`). Praxis HEAD recorded for §1b gate: `5370659`.
 
 ---
 
@@ -53,12 +48,12 @@ standalone Praxis requirement — realized in code (episode `df98fd8b`).
 | R14 | Data model wiring | (in code via stores) | ✅ realized in code (episode `df98fd8b`) |
 | —   | Role permission logic (PRD §1) | `team_app/roles.py` | ✅ built (login/auth = infra, out-of-local-scope) |
 | —   | Local runnable entry point | `team_app/app.py` | ✅ built, green (`python -m team_app.app`) |
-| §8  | Metrics (activation/retention/adherence/distribution/drop-off) | — | ⛔ next (testable logic) |
-| §2C | Team habit checklist store (TeamHabits) | — | ⛔ todo (testable logic) |
+| §8  | Metrics (activation/retention/adherence/distribution/drop-off) | `team_app/metrics.py` | ✅ built, green |
+| §2C | Team habit checklist store (TeamHabits) | — | ⛔ next (testable logic) |
 | §6  | Admin mutations (roster active/inactive, captain assignment) | — | ⛔ todo (testable logic) |
 | —   | Auth/login, DB persistence, web/mobile UI, offline sync, deploy | — | 🚫 out-of-local-scope (infra; CONSTITUTION §6) |
 
-Test suite: **67 passing** (… + messages 8 + content 9 + notifications 7 + app 5) as of last build.
+Test suite: **72 passing** (… + content 9 + notifications 7 + app 5 + metrics 5) as of last build.
 
 ## Plan status (Praxis `agent-factory` org / `prd-team-app` snapshot)
 
@@ -128,6 +123,10 @@ reverted (§12). Tax domain — leave alone per owner constraint.
 
 ## Pass history
 
+- **2026-06-26 Pass 10:** §1b gate clean. Built **§8 metrics** (`team_app/metrics.py`: activation,
+  retention day3/day7, adherence ≥4/week, participation distribution, drop-off point — pure
+  read-only functions; 5 tests). Suite 72 green. Admitted requirement R-METRICS (`9d0995be`,
+  added clean) + episode `fc67c6e7` + `record_outcome`. Commit `487942d`. No bug. Next: §2C habit checklist.
 - **2026-06-26 Pass 9:** §1b gate clean. Built the **runnable one-screen entry point**
   (`team_app/app.py`: `TeamApp.assemble_one_screen` wires R2/R4/R6/R7/R9/R11/R12 + trend; role-gated;
   `python -m team_app.app` runs; 5 tests). Suite 67 green. Episodes `5abcbbf1` (entry point) +
