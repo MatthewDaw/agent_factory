@@ -22,6 +22,9 @@ What it checks (a mix of independent + recorded, like the wireframe gate):
     * every requirement carries >=1 challenge, and EVERY challenge is closed
       (status in resolved/dismissed/deferred with a non-empty resolution) — no `open` challenges
     * rigorous mode: every gap-lens fired-or-passed (non-empty) for every requirement
+    * every required end-to-end technical dimension (auth, data-store, backend, frontend,
+      hosting-deploy, secrets-config, external-services, testing, observability, data-privacy)
+      is addressed in `techDecisions`, closed (resolved / deferred / na) with a decision/rationale
 
 Manifest schema (written by factory-audit):
 {
@@ -50,6 +53,15 @@ import sys
 
 GAP_LENSES = ("failure-modes", "security", "data-lifecycle", "rollback", "who-pays")
 CLOSED = {"resolved", "dismissed", "deferred"}
+
+# End-to-end technical architecture decisions every plan must consciously make. The behavioral
+# requirements never force these, so the gate does: each must appear in `techDecisions`, closed
+# (resolved / deferred-with-reason / na-with-reason). None may be silently skipped.
+REQUIRED_TECH_DIMENSIONS = (
+    "auth", "data-store", "backend", "frontend", "hosting-deploy",
+    "secrets-config", "external-services", "testing", "observability", "data-privacy",
+)
+TECH_CLOSED = {"resolved", "deferred", "na"}
 
 
 def _allow(advice: str = "") -> None:
@@ -126,6 +138,20 @@ def main() -> None:
     if not man.get("contradictionsEmpty"):
         misses.append("contradictionsEmpty != true — run praxis_get_contradictions and resolve "
                       "every pending pair before blessing the plan")
+
+    # 2b) end-to-end technical architecture: every dimension consciously decided
+    tech = {str(t.get("dimension", "")).lower(): t for t in (man.get("techDecisions") or [])}
+    for dim in REQUIRED_TECH_DIMENSIONS:
+        t = tech.get(dim)
+        if not t:
+            misses.append(f"tech decision '{dim}' not addressed — decide it, defer it (owned "
+                          f"decision + reason), or mark na with a reason")
+            continue
+        st = str(t.get("status", "open")).lower()
+        if st not in TECH_CLOSED:
+            misses.append(f"tech decision '{dim}': open (status={st!r}) — resolve / defer / na")
+        elif not (str(t.get("decision", "")).strip() or str(t.get("rationale", "")).strip()):
+            misses.append(f"tech decision '{dim}': {st} but no decision/rationale recorded")
 
     # 3) per-requirement challenge coverage + (rigorous) gap-lenses
     for r in reqs:

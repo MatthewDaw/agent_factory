@@ -3,7 +3,9 @@ name: factory-audit
 description: >
   The separate cold-eyes judgment audit that runs AFTER factory-plan admits requirements and
   BEFORE the plan is blessed (save_snapshot). It adversarially challenges every admitted
-  requirement, detects and routes underspecification, and checks cross-requirement gaps — the
+  requirement, detects and routes underspecification, checks cross-requirement gaps, AND forces
+  every end-to-end technical-architecture decision (auth, data store, stack, deploy, secrets, ...)
+  to be made explicitly — the
   pushback that mechanical gates can't do. Use as the last step of plan-hardening (intake →
   plan → audit → snapshot). A Stop-hook gate blocks the snapshot until the audit is satisfied.
 ---
@@ -59,7 +61,38 @@ condition that hides a gap is exactly what mechanical `plan_gate` will wave thro
 where that gets caught — an underspecified area must visibly become research, a question, or a
 flagged deferral, never a quiet guess.
 
-## Step 3 — Emit the audit artifact (the gated forcing function)
+## Step 3 — Technical architecture sweep (end-to-end)
+
+Behavioral requirements describe *what* the product does; they routinely leave the *how* — the
+cross-cutting technical architecture — unspecified, and a PRD almost never nails it end to end. This
+sweep forces every project-wide technical decision to be made explicitly (or consciously deferred),
+so the build never quietly invents an architecture nobody chose. (This is the dimension a
+requirement-by-requirement audit misses entirely — these are project-level, not per-requirement.)
+
+For each dimension below, resolve it exactly like an underspecified requirement (PRD → mounted
+conventions → low-regret default + `record_episode` → ask the human → defer), and record it in
+`techDecisions`. The gate requires **every** dimension to be addressed — `resolved`, `deferred`
+(owned-decision + reason), or `na` (genuinely not applicable + reason). **None may be silently
+skipped**, and a default may never paper over a genuine owner call (the anti-masking guard).
+
+Required dimensions (end-to-end):
+- **auth** — authentication mechanism (session / JWT / OAuth / magic-link / provider) AND the
+  authorization & role model.
+- **data-store** — database type, driver/ORM, schema & migrations approach.
+- **backend** — language/framework, API style (REST / GraphQL / RPC), runtime.
+- **frontend** — framework, state management, styling approach, build tooling.
+- **hosting-deploy** — deploy target, CI/CD, environments (dev / staging / prod).
+- **secrets-config** — env/config management, secret storage.
+- **external-services** — email/push (the PRD's notifications), file storage, analytics, any 3rd-party.
+- **testing** — test strategy + the deterministic oracle `factory-verify` will gate the build on.
+- **observability** — logging, error tracking, metrics.
+- **data-privacy** — PII handling, retention, consent (the PRD's minors/consent), encryption.
+
+Cite the PRD where it decides one; take a clear default (+episode, for override) where it's silent;
+**ask the human** (batched, Step 5) where it's a genuine product/owner fork. The point: not one of
+these reaches the build by accident.
+
+## Step 4 — Emit the audit artifact (the gated forcing function)
 
 Write `<project>/.factory/plan-audit.json` — this is what the **Stop-hook gate**
 (`hooks/plan_audit_gate.py`) reads and enforces. While `status:"open"`, the gate **blocks the turn
@@ -69,7 +102,10 @@ from ending** (so you can't `save_snapshot` and call it hardened) until ALL hold
 - `contradictionsEmpty: true` — you ran `praxis_get_contradictions` and resolved every pending pair;
 - every requirement has ≥1 challenge and **no open challenge** (all resolved/dismissed/deferred with
   a recorded resolution);
-- rigorous mode: every gap-lens logged for every requirement.
+- rigorous mode: every gap-lens logged for every requirement;
+- **every required technical dimension** (auth, data-store, backend, frontend, hosting-deploy,
+  secrets-config, external-services, testing, observability, data-privacy) is addressed in
+  `techDecisions` — resolved, deferred-with-reason, or na-with-reason; none missing or open.
 
 ```json
 {
@@ -87,6 +123,12 @@ from ending** (so you can't `save_snapshot` and call it hardened) until ALL hold
       "gap_lenses": {"failure-modes": "fired", "security": "pass",
                      "data-lifecycle": "pass", "rollback": "pass", "who-pays": "pass"}
     }
+  ],
+  "techDecisions": [
+    {"dimension": "auth", "decision": "session cookie + email magic-link; roles athlete/captain/coach", "source": "PRD §5 + default", "status": "resolved"},
+    {"dimension": "data-store", "decision": "Postgres + standard migrations", "source": "default (PRD silent)", "status": "resolved"}
+    // ... one entry per required dimension (auth, data-store, backend, frontend, hosting-deploy,
+    //     secrets-config, external-services, testing, observability, data-privacy)
   ]
 }
 ```
@@ -94,7 +136,7 @@ from ending** (so you can't `save_snapshot` and call it hardened) until ALL hold
 Keep the manifest current as you work; the gate flips it to `passed` when clean and lets the turn
 end. Do not hand-edit `status` to `passed` — let the gate decide.
 
-## Step 4 — Mode-aware human moment, then bless
+## Step 5 — Mode-aware human moment, then bless
 
 - **Attended:** present the audit's open challenges, routed-underspecs, and questions as **one
   batched review** (this is the concentrated human moment the review-leverage rule wants — better
