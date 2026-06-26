@@ -27,6 +27,10 @@ Update at the end of every pass. Newest entries at the bottom of each section.
 
 ## Product build status (team-app: C:/Users/mattd/Documents/gauntlet/team-app)
 
+**Git:** repo initialized this session; baseline (R1–R3, 14 green) committed on branch
+**`feat/team-app-build`** (off `main`). Commit each slice here; do not push.
+
+
 | Req | Feature | Code | Status |
 |-----|---------|------|--------|
 | R1  | Daily completion | `team_app/completion.py` | ✅ built, green |
