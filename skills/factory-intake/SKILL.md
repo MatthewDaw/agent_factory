@@ -84,9 +84,34 @@ Field rules:
 - **`defines` / `references`** — concepts, for factory-plan's H14 dangling-reference gate.
 - **`scope`** — `"mvp"` or `"post-mvp"` (the badged wireframe items).
 
-## Step 2 — Hand off to factory-plan (don't re-implement hardening)
+## Step 2 — Review gate (mode-aware), then hand off to factory-plan
 
-Invoke **`factory-plan`** with the candidate inventory as its input. factory-plan runs unchanged:
+Extraction is the **highest-leverage error point** (a bad requirement spawns thousands of bad
+lines — see factory-plan's review-leverage note), and it deliberately over-generates, and admission
+mutates the graph (facts + surface facts + edges) which is costly to unwind. So the candidate file
+is a deliberate checkpoint **before** admission — but a *lightweight, high-signal* one, not a
+line-by-line proofread (factory-plan does the deep per-requirement review next).
+
+**Attended runs (default): pause and present a compact review surface** — not the raw JSON:
+- counts by `source` and `scope` (e.g. "37 candidates: 31 mvp, 6 post-mvp");
+- the **bidirectional coverage cross-check, computed here and cheaply** from the candidates' own
+  `surfaces[]` vs the wireframe surface inventory: every wireframe surface that no candidate covers,
+  and every `mvp` candidate with no surface (and no `backend-only`). This is the extraction-time
+  preview of factory-plan's H14 gate;
+- a short **flagged list**: low-confidence / uncertain extractions, prose↔wireframe conflicts you
+  spotted, and any record whose `acceptance` is still a placeholder.
+
+The human eyeballs that, edits `requirement-candidates.json` directly if needed, and approves. Only
+then do you continue into hardening. Don't admit anything before approval.
+
+**Unattended runs (Constitution / owner asleep): do not pause** — there is no one to approve. Auto-
+continue to hardening, `praxis_record_episode` ("intake: extracted N candidates, auto-admitted,
+owner reviews AM" + the flagged list as alternatives/notes), and drop the candidate file + the
+coverage cross-check + flagged list into the ledger for morning review. (Same attended/unattended
+split as the C4 automated|manual gate.)
+
+On approval (or unattended auto-continue), invoke **`factory-plan`** with the candidate inventory as
+its input. factory-plan runs unchanged:
 - Admit each record as a fact — `add_insight(..., on_conflict="surface", category="requirement",
   meta={requirement_id, surfaces, scope, verify})` — `statement` as the content, `acceptance` as
   the binary condition.
@@ -114,6 +139,8 @@ surface and is pulled by task/DAG dependency instead.)
 - Never delegate the prose docs to a sub-agent — read the named behavioral source fully yourself;
   only the bulk wireframe HTML is delegated.
 - Never let extraction's over-generation reach the snapshot unfiltered — the gate is the filter.
+- Never admit candidates to Praxis before the attended review gate is cleared (Step 2). The
+  candidate file is the cheap checkpoint; the graph is the expensive one to unwind.
 
 ## Compounding
 When a correction reveals a class of miss (a requirement the prose stated but extraction dropped, a
