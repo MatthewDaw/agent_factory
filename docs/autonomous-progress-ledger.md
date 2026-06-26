@@ -12,11 +12,10 @@ Update at the end of every pass. Newest entries at the bottom of each section.
 nodes / 0 contradictions, all 4 evals GREEN). Remaining in-scope logic slices, then a scoped DoD
 audit (scope boundary = episode `82608710`):
 
-1. **§2C Team habit checklist (TeamHabits)** — a store for a team's 3–6 habit items and which a
-   submission checked (recorded, does NOT affect completion per R1). Add `team_app/habits.py` + tests.
-2. **§6 Admin mutations** — roster active/inactive toggle + captain assignment (role mutation),
-   building on `roster.py`/`roles.py`. Add a small `team_app/admin.py` + tests.
-3. **Scoped DoD audit** — declare auth/login, DB, web/mobile UI, offline sync, deploy
+1. **§6 Admin mutations** — roster active/inactive toggle + captain assignment (role mutation),
+   building on `roster.py`/`roles.py`. Add a small `team_app/admin.py` + tests. (Coach-only,
+   deny-by-default — mirror the R6/R7 permission gating.)
+2. **Scoped DoD audit** — declare auth/login, DB, web/mobile UI, offline sync, deploy
    out-of-local-scope (infra) with the episode-`82608710` rationale; confirm all in-scope logic
    built+green, plan hardened, evals GREEN, learnings compounded; write the final handoff.
 
@@ -49,11 +48,11 @@ R14 realized in code (episode `df98fd8b`). Praxis HEAD recorded for §1b gate: `
 | —   | Role permission logic (PRD §1) | `team_app/roles.py` | ✅ built (login/auth = infra, out-of-local-scope) |
 | —   | Local runnable entry point | `team_app/app.py` | ✅ built, green (`python -m team_app.app`) |
 | §8  | Metrics (activation/retention/adherence/distribution/drop-off) | `team_app/metrics.py` | ✅ built, green |
-| §2C | Team habit checklist store (TeamHabits) | — | ⛔ next (testable logic) |
-| §6  | Admin mutations (roster active/inactive, captain assignment) | — | ⛔ todo (testable logic) |
+| §2C | Team habit checklist store (TeamHabits) | `team_app/habits.py` | ✅ built, green |
+| §6  | Admin mutations (roster active/inactive, captain assignment) | — | ⛔ next (testable logic) |
 | —   | Auth/login, DB persistence, web/mobile UI, offline sync, deploy | — | 🚫 out-of-local-scope (infra; CONSTITUTION §6) |
 
-Test suite: **72 passing** (… + content 9 + notifications 7 + app 5 + metrics 5) as of last build.
+Test suite: **78 passing** (… + notifications 7 + app 5 + metrics 5 + habits 6) as of last build.
 
 ## Plan status (Praxis `agent-factory` org / `prd-team-app` snapshot)
 
@@ -123,6 +122,10 @@ reverted (§12). Tax domain — leave alone per owner constraint.
 
 ## Pass history
 
+- **2026-06-26 Pass 11:** §1b gate clean. Built **§2C team habit checklist** (`team_app/habits.py`:
+  TeamHabitsStore one active 3-6 unique-item list per team + checked_items; recorded, never gates
+  completion per R1 — confirmed by test; 6 tests). Suite 78 green. Admitted R-HABITS (`c2efa4f6`,
+  added clean) + episode `4540425b` + `record_outcome`. Commit `4704dae`. No bug. Next: §6 admin mutations.
 - **2026-06-26 Pass 10:** §1b gate clean. Built **§8 metrics** (`team_app/metrics.py`: activation,
   retention day3/day7, adherence ≥4/week, participation distribution, drop-off point — pure
   read-only functions; 5 tests). Suite 72 green. Admitted requirement R-METRICS (`9d0995be`,
