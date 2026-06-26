@@ -49,68 +49,73 @@ This is most of the *knowing* system. The reference model's hardest, least-solve
 These are candidate improvements to **Praxis itself** (or, where noted, things we may have to
 shim locally if Praxis can't take them on).
 
-### H1. Outcome / trust feedback on facts — **HOLE**
+### H1. Outcome / trust feedback on facts — **✅ SHIPPED (merged PR #73)**
 The reference wants verification outcomes to feed back into fact trust: down-weight or retire
 a fact whose suggested action repeatedly *failed*, so retrieval sharpens on what demonstrably
-worked (the actual compounding mechanism). Praxis has `state`, `invalid_at`, and
-auto-resolution confidence, but no notion of a fact's **outcome/utility score** updated by
-downstream success/failure. Without it, the pool grows by volume, not accuracy.
-→ *Praxis improvement:* a mutable per-fact trust/utility signal that retrieval can weight on,
-updatable via the API.
+worked (the actual compounding mechanism).
+→ *Shipped:* `success_count`/`failure_count` on facts + a `Fact.utility` multiplier
+(Laplace-smoothed success rate, neutral 1.0 until outcomes exist), folded into retrieval ranking;
+`record_outcome(fact_id, success)` on the graph + `POST /facts/{id}/outcome`. Red-spec evals:
+`praxis/.../matt/outcome_trust_*` (proven fact outranks a repeatedly-failed one).
 
-### H2. Query-time scope/namespace filtering — **PARTIAL / likely HOLE**
+### H2. Query-time scope/namespace filtering — **✅ SHIPPED (merged PR #80)**
 Reference: scope retrieval so service A's auth never surfaces service B's payments. Praxis
 hits *carry* `scope`/`category`, and mounts/tenancy give coarse partitioning, but it's unclear
 `/context` can **constrain** a query to a scope/category server-side (the documented params are
 `query`, `top_k`, `as_of`). If not, we over-retrieve and filter client-side.
-→ *Praxis improvement:* `scope`/`category` filters on `/context`.
-→ *Plan:* folded into the H4 proposal as **Part 2**
-([`../../praxis/docs/proposals/2026-06-25-episodic-memory-h4.md`](../../praxis/docs/proposals/2026-06-25-episodic-memory-h4.md))
-— an additive `exclude_categories` predicate on `search`/`_where` (`category <> ALL`), `/context`
-default-excluding `"episodic"`, with an `include_episodic` override. Red-spec eval:
-`praxis/.../matt/context_excludes_episodic`.
+→ *Shipped* (with H4, [`proposal`](../../praxis/docs/proposals/2026-06-25-episodic-memory-h4.md)):
+an additive `exclude_categories` predicate on `search`/`_where` (`category <> ALL`, both cosine +
+keyword branches, in-memory graph, and the live+mounted overlay union); `/context` default-excludes
+`"episodic"` with an `include_episodic` override; write-time recall excludes episodic too. Eval:
+`praxis/.../matt/context_excludes_episodic`. (Server-side exclusion now exists; the broader
+cross-service scoping the reference described is the same knob, generalizable later.)
 
-### H3. Automatic temporal decay / staleness expiry — **HOLE**
-Memory-safety best practice expires stale entries (Weibull-style decay) to shrink the
-poisoning/stale-recall surface. Praxis invalidates facts only via contradiction or explicit
-edit — there's no time-based decay or "this learning hasn't been confirmed in N runs, lower
-its weight."
-→ *Praxis improvement:* optional decay/aging policy on facts.
+### H3. Automatic temporal decay / staleness expiry — **✅ SHIPPED (PR #83)**
+Memory-safety best practice expires stale entries to shrink the poisoning/stale-recall surface.
+→ *Shipped* ([`proposal`](../../praxis/docs/proposals/2026-06-25-temporal-decay-h3.md)):
+retrieval ranking scales the cosine score by a recency factor `exp(-ln2*age/half_life)` on
+`created_at` (half-life 90d) — multiplies with H1's utility, so `score = similarity * utility *
+recency`. Neutral (~1.0) for fresh facts (no regression); **retrieval only** — suppressed for
+`as_of` recall and *not* applied to write-time dedup/conflict recall (must still find old
+near-dups). No schema change (reuses `facts.created_at`). Red-spec eval:
+`praxis/.../matt/recency_decay_stale_loses`.
+→ *Follow-up (deferred):* confirmation-refresh — a `last_confirmed_at` bumped by
+`record_outcome(success)` so a re-validated old fact resets its recency ("confirmed in N runs").
 
-### H4. Episodic vs. semantic vs. procedural memory types — **PARTIAL**
+### H4. Episodic vs. semantic vs. procedural memory types — **✅ SHIPPED (episodic; merged PR #80)**
 The reference distinguishes *semantic* (durable facts), *episodic* (a timestamped decision +
 its rationale + what happened), and *procedural* (reusable workflow templates). Praxis stores
 flat atomic facts; the three types can be faked with `scope`/`category`, but there's no
 first-class episodic record ("at plan-time we chose X because Y; it later failed"). `as_of`
 helps reconstruct *what was believed*, not *why it was decided*.
-→ *Praxis improvement (or local shim):* a first-class episodic/decision record type, or a
-documented convention for encoding one in facts + edges.
-→ *Plan:* [`../../praxis/docs/proposals/2026-06-25-episodic-memory-h4.md`](../../praxis/docs/proposals/2026-06-25-episodic-memory-h4.md)
-— convention (not a new type): an episode = a fact tagged `category="episodic"` + `meta.episode`
-{decided_at, alternatives, outcome} + `derived_from` edges (H5). Harness-emitted; kept out of
-semantic recall by H2's exclude. Red-spec eval: `praxis/.../matt/episodic_excluded_from_semantic`.
-**Edge case to design for:** episodes must be **exempt from the semantic write pipeline** —
-no atomization/distillation (store the decision+rationale whole), no dedup/merge, no
-contradiction/supersession (an episodic log is append-only/immutable) — and excluded from
-write-time recall for semantic writes. A "normal fact" gets all of those transforms, which are
-fatal to a decision log (see review).
+→ *Shipped* (episodic only; procedural deferred — [`proposal`](../../praxis/docs/proposals/2026-06-25-episodic-memory-h4.md)):
+convention, not a new type — an episode = a fact tagged `category="episodic"` + `meta.episode`
+{decided_at, alternatives, outcome} + `derived_from` edges (H5), written via `record_episode`
+(graph) / `POST /insights` with `category="episodic"`. Kept out of semantic recall by H2's exclude.
+The load-bearing edge case is **built**: episodes run a **store-only lane** that bypasses the
+semantic write pipeline — no atomization (stored whole), no dedup/merge, no
+contradiction/supersession (append-only/immutable), and excluded from write-time recall of
+semantic writes. A reserved-tag guard blocks a normal write from using `category="episodic"`.
+Red-spec evals: `praxis/.../matt/episodic_store_only_immutable`, `episodic_reserved_tag_integrity`,
+`episodic_stale_not_in_context`.
 
-### H5. Richer typed edges / derivation links — **PARTIAL**
-Praxis has `contradiction`, `contradicted_by`, `supersedes`. The reference's compounding loop
-wants **derivation provenance**: "learning L was derived from facts F1, F2 + PRD slice S," so
-when F1 flips you can find every downstream learning that's now suspect. Current edges don't
-express `derived_from` / `fix_resolves_error` / `depends_on`.
-→ *Praxis improvement:* arbitrary/typed relation edges between facts, with traversal in the API.
+### H5. Richer typed edges / derivation links — **✅ SHIPPED (merged PR #77)**
+The reference's compounding loop wants **derivation provenance**: "learning L was derived from
+facts F1, F2," so when F1 flips you can find every downstream learning that's now suspect.
+→ *Shipped:* `record_derivation` / `write(derived_from=[ids])` writes `derived_from` edges
+(reusing `fact_edges`, no schema change); `dependents()` is a cycle-guarded, depth-bounded
+recursive-CTE traversal; the reject chokepoint flags the transitive dependent closure with a
+`derived_source_invalidated` review edge; `stale_derived()` surfaces the suspect learnings.
+Red-spec eval: `praxis/.../matt/derivation_stale_source`.
 
-### H6. Ingestion integrity on tabular/templated input — **KNOWN PARTIAL**
-The merge path cut the old silent-near-duplicate drop, but tabular input still leaks at **two**
-independent points — and our first PRD is tabular-heavy. This is the one hole we already know
-bites us. (Full design: [`../../praxis/docs/proposals/2026-06-24-tabular-ingestion-integrity.md`](../../praxis/docs/proposals/2026-06-24-tabular-ingestion-integrity.md).)
+### H6. Ingestion integrity on tabular/templated input — **✅ SHIPPED (merged PR #65)**
+The merge path cut the old silent-near-duplicate drop, but tabular input leaked at **two**
+independent points (now both fixed). (Full design: [`../../praxis/docs/proposals/2026-06-24-tabular-ingestion-integrity.md`](../../praxis/docs/proposals/2026-06-24-tabular-ingestion-integrity.md).)
 - **A — distillation under-emits:** the splitter collapses rows sharing a sentence shape; the
   offline path can't parse tables at all.
 - **B — the deduper over-merges siblings:** the `MergeJudge` folds distinct-but-similar rows into
   one fact. Note `/insights` skips A but still hits B.
-→ *Praxis improvement:* (1) deterministic table-linearizer; (2) a **dedup slot-guard** keyed on
+→ *Shipped:* (1) deterministic table-linearizer; (2) a **dedup slot-guard** keyed on
 the full functional `(subject, attribute)` slot from the `claims` table — **not** subject alone
 (subject-only fails the same-subject/different-attribute shape, e.g. a role×permission table,
 which our PRD has). The guard is a three-way decision: distinct slot → block merge; same slot +
@@ -123,12 +128,26 @@ slot-guard (B) **cannot** be shimmed and must land in Praxis.
 found live (the admission-rule vs. done-gate-rule planning facts were silently over-merged on seed).
 Distinct rules that merely share vocabulary must not be collapsed.
 
-### H7. Retrieval budget / tier controls — **PARTIAL**
+### H7. Retrieval budget / tier controls — **✅ IMPLEMENTED (branch `feat/retrieval-tuning-h7`)**
 The reference wants per-tier token budgets and the ability to bias semantic-vs-keyword weight
 per query type (concept vs symbol). Praxis token-bounds results (~8KB) and fuses via RRF, but
-exposes no knobs to tune the fusion or budget per call.
-→ *Praxis improvement (nice-to-have):* optional retrieval-tuning params; otherwise we live
-with the defaults.
+exposed no knobs to tune the fusion or budget per call.
+→ *Shipped (optional, additive, all defaulting to the calibrated behavior — no behavior change
+when unset):*
+- **Budget knob** — `char_budget` on `graph.read` (`PostgresVectorGraph` + `OverlayGraph`),
+  overriding the module-global `_READ_CHAR_BUDGET` (~8KB) per call. A smaller budget keeps the
+  reader prompt tight.
+- **Fusion-weight knob** — `keyword_weight` threaded through `search` → `_rrf_fuse` (semantic
+  branch fixed at 1.0, keyword branch scaled by this value). Raise it for a symbol/exact-match
+  query, lower it to lean semantic. Only meaningful with the existing `hybrid=True`.
+- **HTTP surface** — `/context` now accepts `hybrid`, `keyword_weight`, and `char_budget` query
+  params (fusion knobs apply to the live graph; the mounted-snapshot union stays cosine-only).
+- *Contract:* `keyword_weight`/`hybrid` added to the `SearchableGraph` abstract signature;
+  in-memory `VectorGraph` accepts them as no-ops (no keyword branch to fuse).
+→ *Test:* `praxis/knowledge/tests/test_rrf_fusion_weight.py` — pure-function unit tests proving a
+raised `keyword_weight` promotes the keyword-branch winner, weight 0 == pure semantic, and the
+default reproduces the historical ranking. (Not a `case.yaml` — this is a ranking-mechanism knob,
+not a graph-state assertion.)
 
 ### H8. Bulk write throughput / synchronous read-your-writes — **PARTIAL**
 `/ingest` is slow/async (minutes); a just-written learning isn't immediately retrievable.
@@ -136,7 +155,7 @@ with the defaults.
 correctness hole, but a latency constraint the local loop must design around.
 → *Praxis improvement (nice-to-have):* faster/confirmable writes; *meanwhile* local staging.
 
-### H9. Detect-without-auto-resolve write mode — **RESOLVED (Praxis fix verified 2026-06-25)**
+### H9. Detect-without-auto-resolve write mode — **✅ SHIPPED (merged PR #75; verified 2026-06-25)**
 The plan-hardening loop needs contradictions **surfaced for a human**, not silently settled.
 Originally `add_insight` auto-resolved every conflict (newest wins, loser → `rejected`, nothing in
 `get_contradictions`). **Fixed in Praxis:** `add_insight`/`ingest` now take
@@ -148,7 +167,7 @@ in `get_contradictions`** settled by `resolve_contradiction`.
 - *Consequence:* the earlier rejected-pile workaround is **retired**; `factory-plan`/`factory-memory`
   now use `on_conflict="surface"` + `get_contradictions` as the surface.
 
-### H10. Semantic-contradiction precision — **IMPROVED (Praxis fix verified 2026-06-25)**
+### H10. Semantic-contradiction precision — **✅ SHIPPED (merged PR #74; verified 2026-06-25)**
 The semantic detector over-flagged compatible facts (e.g. "knowledge is stored in the KG" vs "code
 is never in the KG"). Tightened in Praxis; the pair now coexists with no contradiction. Eval cases
 `praxis/.../matt/semantic_no_conflict_storage_target` **and**
@@ -158,7 +177,7 @@ write runs an inline semantic-judge LLM call and can **time out client-side afte
 succeeds** — consumers must read back rather than blind-retry (handled in `factory-memory`); the
 latency/timeout itself is tracked in **H13**.
 
-### H11. No "dismiss / keep-both" contradiction resolution — **RESOLVED (Praxis fix landed 2026-06-25, branch `feat/dismiss-contradiction-h11`)**
+### H11. No "dismiss / keep-both" contradiction resolution — **✅ SHIPPED (merged PR #79)**
 When a surfaced contradiction is a **false positive** (the engine flagged two facts that both
 actually hold — e.g. the captain-approval vs. coach-immediate pair, different actors), there is no
 non-lossy way to clear it. `resolve_contradiction` offers only `keepId` (supersedes one — loses a
@@ -182,11 +201,13 @@ FR-005's ≤1-active-contradictor rule, on explicit human judgement. Wired end t
 residue precision can't eliminate.
 → *Local workaround now retired:* no longer need the lossy `customText`/`keepId`-and-re-add dance.
 
-### H12. Write-time metadata not persisted/honored — **HOLE (verified live 2026-06-25)** · keystone prereq
-`add_insight` accepts `source`/`scope`/`category` but **does not honor them** (a `/context` hit
-comes back with `source: null` after `add_insight(..., source="prd-team-app")`), and there is **no
-`meta` arg** at all. Per the docs, `scope`/`category` are "derived during ingestion," not settable
-by the writer. This blocks three things at once:
+### H12. Write-time metadata not persisted/honored — **✅ SHIPPED (merged PR #81)**
+`add_insight` previously accepted `source`/`scope`/`category` but didn't honor them and had no
+`meta` arg, which blocked H2/H4. **Shipped:** the write paths now persist writer-supplied
+`source`/`scope`/`category` + a `meta` jsonb arg and round-trip them back on `/context`/`candidates`
+(writer value wins; ingestion-derived fills only unset fields). Red-spec:
+`test_insight_persists_writer_metadata`. (Original analysis kept below for context.)
+This had blocked three things at once:
 - **Provenance citation** (the factory must cite which fact grounded a decision — needs `source`).
 - **H2** (exclude by `category`) and **H4** (tag episodes `category="episodic"` + `meta.episode`)
   both *assume* the writer can set `category`/`meta` — they are **blocked on H12**.
@@ -225,7 +246,7 @@ def test_insight_persists_writer_metadata(client):
 `source`/`scope`/`category` on hits as today's keys, `meta` on `/candidates` to keep `/context`
 lean). (b) writer-vs-derived `category` precedence (lean: writer always wins, derived fills unset).
 
-### H13. Write-path reliability under load — **HOLE (hit repeatedly 2026-06-25)**
+### H13. Write-path reliability under load — **PARTIAL (H13.1 timeout shipped in PR #77; concurrency + membership remain)**
 Three operational failures hit live during the dry-run, all on the conflict-checked write path:
 1. **Client-side timeouts:** a write that triggers the inline semantic-judge LLM call routinely
    times out at the MCP client *after the write has already committed server-side* — a false
@@ -235,11 +256,10 @@ Three operational failures hit live during the dry-run, all on the conflict-chec
 3. **Org-membership not durable across restart:** after a backend restart / token refresh,
    membership in a created org vanished (`whoami` showed none), forcing org re-creation.
 **To build (each independent):**
-1. **Timeout** — raise the MCP write-path HTTP-client timeout to cover the inline semantic-judge
-   round-trip (≥60–120s, matching the `/ingest` guidance), ideally **per-call** (long for
-   writes/ingest, short for reads). *Stretch:* make conflict-checking async so writes return fast
-   and the pending contradiction surfaces shortly after — bigger change; defer unless the bump is
-   insufficient.
+1. **Timeout — ✅ SHIPPED (PR #77):** per-call MCP HTTP timeouts (long for writes/ingest, short
+   for reads) cover the inline semantic-judge round-trip. *Stretch (still open):* make
+   conflict-checking async so writes return fast and the pending contradiction surfaces shortly
+   after — deferred unless the bump proves insufficient.
 2. **Concurrency** — the conflict-checked write path must tolerate concurrent writers without
    cascading 500s; investigate connection-pool exhaustion / a transaction left open under load.
    Minimum bar: a failing write fails *cleanly*, not poisoning the backend for unrelated requests.
@@ -257,23 +277,27 @@ Three operational failures hit live during the dry-run, all on the conflict-chec
 
 ---
 
-## Summary
+## Summary (status as of 2026-06-25)
 
-- **Praxis covers the core of the knowing system** — and is strongest exactly where the
-  reference model says factories are weakest (gated, contradiction-aware writes + temporal
-  truth-maintenance).
-- **The compounding loop is the main gap cluster:** H1 (outcome→trust), H4 (episodic records),
-  and H5 (derivation edges) together are what turn "a store of facts" into "memory that gets
-  *more accurate*, not just bigger." If we improve Praxis anywhere, here first.
-- **H6 (tabular ingestion) is the one hole that blocks us immediately** and must be shimmed
-  locally regardless of whether Praxis improves.
-- **H2, H3, H7, H8** are sharpening/ergonomics holes — real, but workable around in the short term.
-- **Smoke testing (2026-06-25) surfaced a write-path cluster:** **H9** (surface-mode conflicts) and
-  **H10** (semantic-contradiction precision) are **RESOLVED + verified**. Still **to build**:
-  **H12** (writer metadata — the *keystone*; H2 and H4 are blocked on it, so do it first),
-  **H11** (dismiss/keep-both resolution), and **H13** (write-path reliability: timeout, concurrency,
-  membership durability). H11–H13 are detailed enough to code from in-place above; H12/H13 have no
-  separate proposal by design.
+**✅ Shipped & merged (10 of 13):**
+- **Compounding loop — complete:** **H1** (outcome→trust, #73), **H4** (episodic memory, #80),
+  **H5** (derivation edges, #77). These turn "a store of facts" into "memory that gets *more
+  accurate*, not just bigger."
+- **H6** (tabular ingestion integrity, #65) — the immediate blocker, fixed.
+- **H2** (query-time category exclusion, #80) — server-side, completes H4's filter.
+- **H12** (writer metadata round-trip, #81) — the keystone H2/H4 depended on.
+- **Write-path cluster from the 2026-06-25 smoke test:** **H9** (surface-mode conflicts, #75),
+  **H10** (semantic-contradiction precision, #74), **H11** (dismiss/keep-both resolution, #79).
+- **H13.1** (per-call MCP write timeout, #77).
 
-Step 2's research team should pressure-test each HOLE/PARTIAL against the actual `../praxis`
-source and decide, per item: *improve Praxis* vs. *shim locally* vs. *accept the limitation*.
+**Recently shipped:** **H3** (temporal decay, PR #83) and **H7** (retrieval-tuning knobs,
+`feat/retrieval-tuning-h7`).
+
+**Remaining (1 partial + infra), all "sharpening/ergonomics" — workable around short-term:**
+- **H8** (bulk-write throughput / read-your-writes latency) — latency, not correctness; shimmed.
+- **H13.2** (write-burst concurrency) and **H13.3** (org-membership durability across restart) —
+  infra reliability; not eval-able as `case.yaml` (want a stress test + a restart-survival test).
+
+Praxis now covers the whole compounding loop, recency/decay, retrieval tuning, and the write-path
+reliability basics. What's left is H8 (write latency, shimmed) and the two H13 infra items
+(concurrency, membership durability).
