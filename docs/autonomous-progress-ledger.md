@@ -8,16 +8,17 @@ Update at the end of every pass. Newest entries at the bottom of each section.
 
 ## NEXT (the resume pointer)
 
-1. **Build the role/permission + visibility slices** — R6 (athlete sees only team-aggregate
-   participation/streak, never per-teammate completion) and R7 (coach can query per-athlete
-   completion; athlete/captain cannot). Add a `team_app/roles.py` (role enum + a
-   `can_view_individual_completion(role)` / visibility helper) + a `team_app/views.py` or
-   aggregate-vs-individual view selector, with tests. This is the first slice needing a
-   role/permission concept — keep it a pure function over (role, data), no web layer yet.
-2. Then captain message (R9), weekly theme (R11) / daily prompt (R12), notifications (R13),
-   captain message (R9), weekly theme (R11) / daily prompt (R12), notifications (R13), and a thin
-   runnable local entry point. Follow build order in CONSTITUTION §6.
-4. Continue passes until DoD (CONSTITUTION §1).
+1. **Build R9 (captain message + optional approval)** — a captain may post one leader message
+   scoped to their own team; when the coach requires approval, it stays hidden until a coach
+   approves. Add `team_app/messages.py` (a message store with post/approve/visible-to-team,
+   role-gated via `team_app/roles.py`) + tests.
+2. Then **R11 (weekly theme)** — exactly one active theme per (team, week); **R12 (daily prompt)**
+   — exactly one prompt per (team, date), response_type ∈ {text_short, multiple_choice,
+   rating_1_5, rating_1_10}; **R13 (notifications)** — ≤1 daily + ≤1 streak-save reminder, never
+   implying individual noncompliance.
+3. Then **auth + roles wiring** (PRD §1) and a **thin runnable local entry point** (e.g. a single
+   `team_app/app.py` that assembles a team-day view from the stores) so the app "runs locally."
+4. Continue passes until DoD (CONSTITUTION §1). Build order: CONSTITUTION §6.
 
 **Graph is clean as of the last pass** (R5/R8 repaired, R14 strays removed, snapshot re-saved at
 15 nodes). R10 (leaderboard) correctly stays `rejected`. R14 (data model) is intentionally NOT a
@@ -38,8 +39,8 @@ standalone Praxis requirement — realized in code (episode `df98fd8b`).
 | R3  | Active roster    | `team_app/roster.py` | ✅ built, green |
 | R4  | Team streak (≥70%) | `team_app/streak.py` | ✅ built, green |
 | R5  | Team-day boundary (3AM) | `team_app/day_boundary.py` | ✅ built, green |
-| R6  | Athlete visibility (aggregate only) | — | ⛔ todo |
-| R7  | Coach visibility (per-athlete) | — | ⛔ todo |
+| R6  | Athlete visibility (aggregate only) | `team_app/roles.py`+`views.py` | ✅ built, green |
+| R7  | Coach visibility (per-athlete) | `team_app/roles.py`+`views.py` | ✅ built, green |
 | R8  | Submission idempotency | `team_app/submissions.py` | ✅ built, green |
 | R9  | Captain message + approval | — | ⛔ todo |
 | R11 | Weekly theme | — | ⛔ todo |
@@ -49,8 +50,8 @@ standalone Praxis requirement — realized in code (episode `df98fd8b`).
 | —   | Auth + roles | — | ⛔ todo (PRD §1) |
 | —   | Local runnable entry point | — | ⛔ todo |
 
-Test suite: **33 passing** (completion 4 + participation 4 + roster 6 + streak 6 + day_boundary 6
-+ submissions 7) as of last build.
+Test suite: **38 passing** (completion 4 + participation 4 + roster 6 + streak 6 + day_boundary 6
++ submissions 7 + views/roles 5) as of last build.
 
 ## Plan status (Praxis `agent-factory` org / `prd-team-app` snapshot)
 
@@ -120,6 +121,11 @@ reverted (§12). Tax domain — leave alone per owner constraint.
 
 ## Pass history
 
+- **2026-06-26 Pass 5:** Switched loop cadence to **every 15 min** (cron `797c0c14`; old
+  `1defb1e0` deleted; cron prompt now runs the §1b gate first). Built **R6/R7 role-aware
+  visibility** (`team_app/roles.py` + `views.py`; `SubmissionStore.for_day_by_user`; 5 tests —
+  athlete/captain aggregate-only, coach per-athlete, deny-by-default, store integration). Suite
+  38 green. Episode `942cc8d9` + `record_outcome(R6, R7)`. Commit `5714947`. No bug. Next: R9.
 - **2026-06-26 Pass 4 (HARDEN — tooling to 100%):** Owner flagged the loop wasn't closing evals.
   Checked praxis git: the parallel agent's fixes had **landed** (`f381109` Augmenter contradiction
   guard + atomic insights #97; `c0da203` derived-no-merge; `ee76f75` update_fact category; HEAD
