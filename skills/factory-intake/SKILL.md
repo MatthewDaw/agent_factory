@@ -97,7 +97,7 @@ line-by-line proofread (factory-plan does the deep per-requirement review next).
 - the **bidirectional coverage cross-check, computed here and cheaply** from the candidates' own
   `surfaces[]` vs the wireframe surface inventory: every wireframe surface that no candidate covers,
   and every `mvp` candidate with no surface (and no `backend-only`). This is the extraction-time
-  preview of factory-plan's H14 gate;
+  preview of the graph-native `praxis_surface_coverage` gate (which runs post-admission, Step 2/3);
 - a short **flagged list**: low-confidence / uncertain extractions, prose↔wireframe conflicts you
   spotted, and any record whose `acceptance` is still a placeholder.
 
@@ -116,20 +116,28 @@ its input. factory-plan runs unchanged:
   meta={requirement_id, surfaces, scope, verify})` — `statement` as the content, `acceptance` as
   the binary condition.
 - Adversarial / gap lenses; contradiction queue (incl. the prose↔wireframe clashes you preserved).
-- **H14, now bidirectional** (the completeness check intake exists to enable): every wireframe
-  surface maps to ≥1 requirement, AND every MVP requirement maps to ≥1 surface or is explicitly
-  `backend-only`. A screen with no backing rule, or an MVP rule with no screen, blocks the gate.
+- **H14, now bidirectional** (the completeness check intake exists to enable): once bindings are
+  written (Step 3), **`praxis_surface_coverage(project, scope="mvp")`** is the graph-native gate —
+  its `uncoveredSurfaces` (a screen with no backing requirement) and `uncoveredRequirements` (an MVP
+  requirement with no screen) must both be empty, or each exception justified, before the done-gate
+  clears.
 - Human clears the gate → `save_snapshot("prd-<project>")`.
 
-## Step 3 — Persist the surface↔requirement binding
+## Step 3 — Persist the surface↔requirement binding (first-class `renders` relation)
 
-The binding lives in each requirement fact's **`meta.surfaces`** (set at admission). That is the
-queryable bridge the wireframe→code step uses: to build a screen, it loads the `prd-<project>`
-snapshot and selects the facts whose `meta.surfaces` includes that screen id, giving a per-screen
-hermetic context (behavior from Praxis, layout from the wireframe HTML in git). Keep the binding in
-`meta` rather than inventing a new edge type — the project fact-set is bounded, so the executor can
-filter the snapshot locally by surface. (If a requirement is `backend-only`, it simply has no
-surface and is pulled by task/DAG dependency instead.)
+The binding is a **first-class typed graph edge in Praxis** — `renders` (requirement fact → surface
+fact) — not metadata. After factory-plan admits each requirement, persist its candidate `surfaces[]`:
+- For each screen id, call **`praxis_bind_surface(requirement_fact_id, screen_id, project, title,
+  file, states)`** — it ensures the surface fact (`category="surface"`, `scope=project`, idempotent
+  on `screen_id`) AND adds the `renders` edge in one call. (`praxis_ensure_surface` exists if you
+  ever need a surface without a binding.) A `backend-only` requirement gets no bind — it's reached
+  by task/DAG dependency instead.
+
+This edge is the queryable bridge the wireframe→code step uses: to build a screen it calls
+**`praxis_requirements_for_surface(project, screen_id)`** and gets exactly the active requirement
+facts governing that screen — a per-screen hermetic context (behavior from Praxis, layout from the
+wireframe HTML in git). Rejecting or deleting a requirement drops it from these queries
+automatically (active-only filtering + `ON DELETE CASCADE`); no `meta.surfaces` bookkeeping.
 
 ## Never
 - Never treat the wireframe as a behavioral source of truth — behavior comes from the prose; the

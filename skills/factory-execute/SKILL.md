@@ -34,7 +34,10 @@ the task's requirement + its **binary acceptance condition**, the conventions/in
 and any task-specific facts — via declared `factory-memory` queries (scope + top_k + `as_of`).
 Budget it (hot constitution always in; warm/cold to a ceiling well below the context-rot threshold).
 The agent works from this sealed bundle; if it discovers it needs more, that's a new declared pull,
-logged — not unbounded mid-task querying.
+logged — not unbounded mid-task querying. For a **screen-scoped build task**, pull the governing
+behavior with **`praxis_requirements_for_surface(project, screen_id)`** — the active requirement
+facts bound to that wireframe screen via the `renders` relation (factory-intake §3) — and take the
+layout from the wireframe HTML in git.
 
 **Read-only retrieval sub-agent (the one permitted delegation).** When populating the bundle (or
 researching in `factory-plan`) needs reading many files or large surfaces, dispatch a *disposable,
