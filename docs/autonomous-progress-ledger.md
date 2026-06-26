@@ -78,6 +78,20 @@ rather than writing a duplicate fix.
 
 ---
 
+## Verified mechanics (use these; don't rediscover)
+
+- **Praxis eval check — fast, no side effects (validated 3x this session):** call the check
+  directly with the case params:
+  `praxis/.venv/Scripts/python.exe -c "import sys; sys.path.insert(0,'.'); from dotenv import load_dotenv; load_dotenv('.env'); from knowledge.evals.deterministic_checks.graph import <check> as c; print(c(None, **params).passed)"`
+  (run from the praxis repo). Reproduces against the real write policy via the live `.env`
+  (Postgres :5433 + OpenRouter); does NOT write cassettes. Prefer this for RED/GREEN confirmation.
+- The full harness runner (CONSTITUTION §11, `python -m knowledge.evals.run <id> --openrouter`)
+  also works but **write-throughs cassette fixtures** into the praxis tree — extra index noise
+  while another agent is active there; use only when you need the harness's grading/SKIP logic.
+- **team-app tests:** `cd team-app && python -m pytest -q` (baseline 14 green).
+- **Praxis backend health:** `curl 127.0.0.1:8000/health` → 200 (PID was 5764; restart per §13
+  after any praxis code fix — the MCP just proxies to :8000).
+
 ## Decisions log (owned, low-regret; owner may override)
 
 - Streak threshold = **≥70%** of active roster (PRD §3 worked example). Episode recorded
