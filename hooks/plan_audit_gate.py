@@ -22,9 +22,9 @@ What it checks (a mix of independent + recorded, like the wireframe gate):
     * every requirement carries >=1 challenge, and EVERY challenge is closed
       (status in resolved/dismissed/deferred with a non-empty resolution) — no `open` challenges
     * rigorous mode: every gap-lens fired-or-passed (non-empty) for every requirement
-    * every required end-to-end technical dimension (auth, data-store, backend, frontend,
-      hosting-deploy, secrets-config, external-services, testing, observability, data-privacy)
-      is addressed in `techDecisions`, closed (resolved / deferred / na) with a decision/rationale
+    * technical decisions (DYNAMIC, no fixed list): `techDecisions` non-empty and every entry
+      closed (resolved / deferred / na) with a decision/rationale, AND `techDecisionsCritic`
+      ran with `missingFound: []` and `passes: true` (an independent pass found nothing missing)
 
 Manifest schema (written by factory-audit):
 {
@@ -54,13 +54,10 @@ import sys
 GAP_LENSES = ("failure-modes", "security", "data-lifecycle", "rollback", "who-pays")
 CLOSED = {"resolved", "dismissed", "deferred"}
 
-# End-to-end technical architecture decisions every plan must consciously make. The behavioral
-# requirements never force these, so the gate does: each must appear in `techDecisions`, closed
-# (resolved / deferred-with-reason / na-with-reason). None may be silently skipped.
-REQUIRED_TECH_DIMENSIONS = (
-    "auth", "data-store", "backend", "frontend", "hosting-deploy",
-    "secrets-config", "external-services", "testing", "observability", "data-privacy",
-)
+# Technical decisions are DYNAMIC — derived per project by factory-audit, not a fixed checklist
+# (a CLI, an ML pipeline, a web app, a game, and a library each need a different set). The gate
+# therefore enforces *process*, not a hardcoded list: a non-empty enumeration, every entry closed,
+# and an independent completeness critic that ran and came back with nothing missing.
 TECH_CLOSED = {"resolved", "deferred", "na"}
 
 
@@ -139,19 +136,31 @@ def main() -> None:
         misses.append("contradictionsEmpty != true — run praxis_get_contradictions and resolve "
                       "every pending pair before blessing the plan")
 
-    # 2b) end-to-end technical architecture: every dimension consciously decided
-    tech = {str(t.get("dimension", "")).lower(): t for t in (man.get("techDecisions") or [])}
-    for dim in REQUIRED_TECH_DIMENSIONS:
-        t = tech.get(dim)
-        if not t:
-            misses.append(f"tech decision '{dim}' not addressed — decide it, defer it (owned "
-                          f"decision + reason), or mark na with a reason")
-            continue
+    # 2b) technical architecture (DYNAMIC): a non-empty, fully-closed enumeration whose
+    # completeness an INDEPENDENT critic has signed off on. No hardcoded dimension list — the
+    # critic is what dynamically finds what's missing to build *this* system.
+    tech = man.get("techDecisions") or []
+    if not tech:
+        misses.append("techDecisions is empty — derive the technical decisions THIS system needs "
+                      "to be buildable (whatever applies: runtime, data store, auth, deploy, "
+                      "packaging, model hosting, ...) and address each")
+    for t in tech:
+        dim = t.get("dimension", "?")
         st = str(t.get("status", "open")).lower()
         if st not in TECH_CLOSED:
             misses.append(f"tech decision '{dim}': open (status={st!r}) — resolve / defer / na")
         elif not (str(t.get("decision", "")).strip() or str(t.get("rationale", "")).strip()):
             misses.append(f"tech decision '{dim}': {st} but no decision/rationale recorded")
+    critic = man.get("techDecisionsCritic") or {}
+    if not critic.get("ran"):
+        misses.append("techDecisionsCritic did not run — an INDEPENDENT cold-eyes pass must hunt "
+                      "for technical decisions still unmade for this system")
+    elif critic.get("missingFound"):
+        misses.append(f"techDecisionsCritic surfaced {len(critic.get('missingFound') or [])} "
+                      f"missing technical decision(s) — incorporate them, then re-run the critic")
+    elif not critic.get("passes"):
+        misses.append("techDecisionsCritic.passes != true — the completeness critic has not signed "
+                      "off that the technical decisions are complete for this system")
 
     # 3) per-requirement challenge coverage + (rigorous) gap-lenses
     for r in reqs:

@@ -69,28 +69,31 @@ sweep forces every project-wide technical decision to be made explicitly (or con
 so the build never quietly invents an architecture nobody chose. (This is the dimension a
 requirement-by-requirement audit misses entirely — these are project-level, not per-requirement.)
 
-For each dimension below, resolve it exactly like an underspecified requirement (PRD → mounted
-conventions → low-regret default + `record_episode` → ask the human → defer), and record it in
-`techDecisions`. The gate requires **every** dimension to be addressed — `resolved`, `deferred`
-(owned-decision + reason), or `na` (genuinely not applicable + reason). **None may be silently
-skipped**, and a default may never paper over a genuine owner call (the anti-masking guard).
+**Derive the decisions dynamically — there is NO fixed list.** Enumerate the technical decisions
+*this* system needs to be buildable, reasoning from the PRD, the admitted requirements, and the
+*kind* of software it is. What a web app needs differs from a CLI, an ML/data pipeline, a game, an
+embedded device, or a library — never work from a canned checklist.
 
-Required dimensions (end-to-end):
-- **auth** — authentication mechanism (session / JWT / OAuth / magic-link / provider) AND the
-  authorization & role model.
-- **data-store** — database type, driver/ORM, schema & migrations approach.
-- **backend** — language/framework, API style (REST / GraphQL / RPC), runtime.
-- **frontend** — framework, state management, styling approach, build tooling.
-- **hosting-deploy** — deploy target, CI/CD, environments (dev / staging / prod).
-- **secrets-config** — env/config management, secret storage.
-- **external-services** — email/push (the PRD's notifications), file storage, analytics, any 3rd-party.
-- **testing** — test strategy + the deterministic oracle `factory-verify` will gate the build on.
-- **observability** — logging, error tracking, metrics.
-- **data-privacy** — PII handling, retention, consent (the PRD's minors/consent), encryption.
+*Illustrative only* (a typical web app): auth + authz, data store + migrations, backend stack + API
+style, frontend framework + styling + build tooling, hosting/deploy + CI + environments,
+secrets/config, external services (email/push/storage), testing + the verify oracle, observability,
+data-privacy (PII/retention/consent/encryption). **These are prompts, not the list** — an ML service
+also needs model hosting/versioning/eval data; a CLI needs packaging/distribution/config; a library
+needs its public API surface + semver + release process. Derive the real set for *this* build.
 
-Cite the PRD where it decides one; take a clear default (+episode, for override) where it's silent;
-**ask the human** (batched, Step 5) where it's a genuine product/owner fork. The point: not one of
-these reaches the build by accident.
+Resolve each like an underspecified requirement (PRD → mounted conventions → low-regret default +
+`record_episode` → ask the human → defer) and record it in `techDecisions` with status `resolved`,
+`deferred` (owned-decision + reason), or `na` (genuinely not applicable + reason). None may be
+silently skipped, and a default may never paper over a genuine owner fork (anti-masking).
+
+**Then run the completeness critic — this is the dynamic pushback you asked for.** Dispatch an
+*independent* cold-eyes sub-agent (`factory-execute` §1a) whose only job is: *"to actually build
+this system, what technical decisions are still unmade?"* It reads the PRD + requirements + the
+current `techDecisions` and names what's missing for **this** product. Add what it surfaces, resolve
+those too, and **loop until it returns nothing new** (loop-until-dry). Record the result in
+`techDecisionsCritic` `{ran, missingFound, passes}`. This is how the system *finds* the missing
+decisions for whatever is being built — rather than checking a static list — and the gate will not
+pass until the critic has signed off with nothing missing.
 
 ## Step 4 — Emit the audit artifact (the gated forcing function)
 
@@ -103,9 +106,9 @@ from ending** (so you can't `save_snapshot` and call it hardened) until ALL hold
 - every requirement has ≥1 challenge and **no open challenge** (all resolved/dismissed/deferred with
   a recorded resolution);
 - rigorous mode: every gap-lens logged for every requirement;
-- **every required technical dimension** (auth, data-store, backend, frontend, hosting-deploy,
-  secrets-config, external-services, testing, observability, data-privacy) is addressed in
-  `techDecisions` — resolved, deferred-with-reason, or na-with-reason; none missing or open.
+- the **technical decisions** are complete for this system: `techDecisions` is non-empty and every
+  entry is closed (resolved / deferred-with-reason / na-with-reason), AND the independent
+  `techDecisionsCritic` ran and signed off with nothing missing (`passes: true`, `missingFound: []`).
 
 ```json
 {
@@ -127,9 +130,9 @@ from ending** (so you can't `save_snapshot` and call it hardened) until ALL hold
   "techDecisions": [
     {"dimension": "auth", "decision": "session cookie + email magic-link; roles athlete/captain/coach", "source": "PRD §5 + default", "status": "resolved"},
     {"dimension": "data-store", "decision": "Postgres + standard migrations", "source": "default (PRD silent)", "status": "resolved"}
-    // ... one entry per required dimension (auth, data-store, backend, frontend, hosting-deploy,
-    //     secrets-config, external-services, testing, observability, data-privacy)
-  ]
+    // ... however many THIS system needs — dynamically derived, not a fixed list
+  ],
+  "techDecisionsCritic": {"ran": true, "missingFound": [], "passes": true}
 }
 ```
 
