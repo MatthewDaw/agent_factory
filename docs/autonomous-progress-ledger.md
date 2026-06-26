@@ -8,19 +8,21 @@ Update at the end of every pass. Newest entries at the bottom of each section.
 
 ## NEXT (the resume pointer)
 
-1. **Build the thin runnable local entry point + auth/roles wiring** (PRD §1; the last build
-   slice). Add `team_app/app.py`: a `TeamApp` (or `assemble_one_screen(...)`) that wires the
-   stores (submissions, content, messages, streak history) into the R6/R7 role-gated
-   "one-screen daily flow" — header (R11 theme), prompt (R12), team consistency snapshot
-   (participation R2 + streak R4), and visible messages (R9) — for a given (role, user, team,
-   team-day). Enforce role permissions at the assembly boundary (athlete/captain vs coach).
-   Add a `__main__`/demo path so `python -m team_app.app` runs locally and prints a sample
-   one-screen view. Tests for the assembled view + role gating.
-2. **Then run the DoD §1 audit** (CONSTITUTION §1): confirm every PRD requirement is built +
-   green with a runnable entry point; the `prd-team-app` snapshot is hardened (every requirement
-   an atomic fact, binary acceptance, zero unresolved contradictions); all coding_factory evals
-   GREEN; learnings compounded. Write the final handoff in the ledger when all four hold.
-3. Build order: CONSTITUTION §6.
+**Core build COMPLETE** (R1–R14 + runnable one-screen entry point, 67 green, plan hardened @23
+nodes / 0 contradictions, all 4 evals GREEN). Remaining in-scope logic slices, then a scoped DoD
+audit (scope boundary = episode `82608710`):
+
+1. **§8 Metrics** — pure functions over submission history: activation (completed Day 1),
+   retention (returned Day 3 / Day 7), adherence (% completing ≥4 days/week), participation
+   distribution, drop-off point (which block: prompt/checklist/ratings). Add `team_app/metrics.py`
+   + tests.
+2. **§2C Team habit checklist (TeamHabits)** — a store for a team's 3–6 habit items and which a
+   submission checked (recorded, does NOT affect completion per R1). Add `team_app/habits.py` + tests.
+3. **§6 Admin mutations** — roster active/inactive toggle + captain assignment (role mutation),
+   building on `roster.py`/`roles.py`. Add a small `team_app/admin.py` + tests.
+4. **Scoped DoD audit** — declare auth/login, DB, web/mobile UI, offline sync, deploy
+   out-of-local-scope (infra) with the episode-`82608710` rationale; confirm all in-scope logic
+   built+green, plan hardened, evals GREEN, learnings compounded; write the final handoff.
 
 **Graph is clean as of the last pass** (R5/R8 repaired, R14 strays removed, snapshot re-saved at
 15 nodes). R10 (leaderboard) correctly stays `rejected`. R14 (data model) is intentionally NOT a
@@ -48,12 +50,15 @@ standalone Praxis requirement — realized in code (episode `df98fd8b`).
 | R11 | Weekly theme | `team_app/content.py` | ✅ built, green |
 | R12 | Daily prompt | `team_app/content.py` | ✅ built, green |
 | R13 | Notifications | `team_app/notifications.py` | ✅ built, green |
-| R14 | Data model wiring | — | ⛔ todo |
-| —   | Auth + roles | — | ⛔ todo (PRD §1) |
-| —   | Local runnable entry point | — | ⛔ todo |
+| R14 | Data model wiring | (in code via stores) | ✅ realized in code (episode `df98fd8b`) |
+| —   | Role permission logic (PRD §1) | `team_app/roles.py` | ✅ built (login/auth = infra, out-of-local-scope) |
+| —   | Local runnable entry point | `team_app/app.py` | ✅ built, green (`python -m team_app.app`) |
+| §8  | Metrics (activation/retention/adherence/distribution/drop-off) | — | ⛔ next (testable logic) |
+| §2C | Team habit checklist store (TeamHabits) | — | ⛔ todo (testable logic) |
+| §6  | Admin mutations (roster active/inactive, captain assignment) | — | ⛔ todo (testable logic) |
+| —   | Auth/login, DB persistence, web/mobile UI, offline sync, deploy | — | 🚫 out-of-local-scope (infra; CONSTITUTION §6) |
 
-Test suite: **62 passing** (completion 4 + participation 4 + roster 6 + streak 6 + day_boundary 6
-+ submissions 7 + views/roles 5 + messages 8 + content 9 + notifications 7) as of last build.
+Test suite: **67 passing** (… + messages 8 + content 9 + notifications 7 + app 5) as of last build.
 
 ## Plan status (Praxis `agent-factory` org / `prd-team-app` snapshot)
 
@@ -123,6 +128,13 @@ reverted (§12). Tax domain — leave alone per owner constraint.
 
 ## Pass history
 
+- **2026-06-26 Pass 9:** §1b gate clean. Built the **runnable one-screen entry point**
+  (`team_app/app.py`: `TeamApp.assemble_one_screen` wires R2/R4/R6/R7/R9/R11/R12 + trend; role-gated;
+  `python -m team_app.app` runs; 5 tests). Suite 67 green. Episodes `5abcbbf1` (entry point) +
+  `82608710` (DoD scope boundary). Commit `c969643`. Re-saved snapshot @23 nodes, 0 contradictions.
+  **DoD audit: behavioral core complete but PRD not 100%** — remaining in-scope logic: §8 metrics,
+  §2C habit checklist, §6 admin mutations; infra/UI declared out-of-local-scope. Did NOT declare
+  DoD met. Next: §8 metrics.
 - **2026-06-26 Pass 8:** §1b gate: praxis HEAD unchanged (`5370659`) → tooling green, skipped.
   Built **R13 notifications** (`team_app/notifications.py`: ≤1 daily + ≤1 streak-save per
   athlete/day, idempotent, non-shaming copy enforced by a marker-blocklist test; 7 tests). Suite
