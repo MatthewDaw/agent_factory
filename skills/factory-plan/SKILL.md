@@ -99,6 +99,26 @@ The failure mode to avoid: asking the human something the PRD already answers, o
 decision out of an edge that has an obvious default. Pre-fill what you resolved as
 "resolved from <source>" / "default (PRD silent) — confirm?" so the human edits rather than dictates.
 
+**The underspecification trigger (research or ask — never silently default).** The concrete signal
+that fires this ladder: *a candidate cannot be given a binary acceptance condition from the sources
+in hand.* When that fires, classify the gap and route deterministically — do not guess a value:
+1. **Research-resolvable** — the answer plausibly already exists (another PRD/spec section, the
+   wireframe, a mounted `prd-*`/`constitution`, a convention, external prior art). **Dispatch the
+   read-only research sub-agent** (factory-execute §1a) to go find it, then re-attempt the
+   acceptance condition. *Reading more is the first move, not asking.*
+2. **Convention-resolvable** — PRD silent, one clear low-regret default. Take it,
+   `praxis_record_episode`, surface for override.
+3. **Genuine product fork** — reasonable choices materially differ and no default is clearly right.
+   **Ask the human** (blocking), stating what you already checked.
+4. **Unknowable now** — record as an owned-decision / deferred fact; it cannot pass the done-gate
+   until resolved.
+
+**Anti-masking guard:** a "conventional default" may never be used to paper over a genuine fork. If
+you can't tell whether something is a safe default or a real product decision, treat it as a fork
+and ask. Silently defaulting an underspecified requirement is exactly the failure this trigger
+exists to prevent — an underspecified area should *visibly* become research, a question, or a
+flagged deferral, never a quiet guess.
+
 **b. Admission gate + ambiguity forge.** A requirement is not admitted to the graph until it
 carries ≥1 **binary acceptance condition** ("when X, the system does Y, observable via Z"). Draft
 the candidate condition; the human accepts/edits/rejects. When an answer uses a vague term
