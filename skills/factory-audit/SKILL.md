@@ -46,6 +46,37 @@ A challenge isn't done until it's **closed** — one of:
 - **deferred** — a genuine owned-decision that can't be settled now (record it as a deferred fact;
   it's explicit, not silent).
 
+### Step 1a — Near-duplicate / overlap challenges WRITE BACK to the graph (not just annotate)
+
+A specific, load-bearing class of challenge is the **near-duplicate / overlap** pair: two admitted
+facts that say the same thing, or where one restates a clause of the other. The cold-eyes pass is the
+**only** dedup/reconcile step for any plan admitted via the `raw=True` bulk fast-lane (factory-plan
+Step 1 item 4) — `raw` deliberately **skips Praxis dedup**, so no earlier stage collapses these. That
+makes reconciliation **the audit's job**: leaving the graph clean is the outcome, not a free-text
+note about it. A near-dup resolution is therefore **not "closed" until the graph itself reflects it** —
+an annotation in `plan-audit.json` alone does NOT close it. Reason about the pair, then take the
+matching graph action:
+
+- **redundant / subsumed** (one fact fully covers the other) → keep the canonical fact and
+  **`praxis_reject_fact`** the loser. Rejection drops it from active queries and fires the **stale
+  cascade** (`praxis_get_stale_derivations` / `praxis_dependents` flag anything that was built on it).
+  Record *why* and a **cross-link** to the canonical fact so the reason lives in the graph, then
+  **re-save the `prd-<project>` snapshot**.
+- **distinct-but-overlapping** (different primary intents, but one restates a clause of the other) →
+  **`praxis_edit_fact`** the overlapping fact to **NARROW** it — strip the duplicated clause so it
+  **defers to / references** the canonical fact rather than re-stating it (`edit_fact` requires BOTH
+  `title` and `content`). Persist the relationship as a **cross-link in the GRAPH** — a
+  `praxis_record_derivation` edge (or a `references` entry in `meta`) — not just in prose, then
+  **re-save the snapshot**.
+- **genuinely distinct / complementary** (e.g. two real layers of one path, like a re-tap vs an
+  offline-sync idempotency rule) → **no graph change**; record the cross-link rationale so a future
+  reader knows the overlap was considered and the two were *deliberately* kept.
+
+This is fully consistent with the incremental path's `on_conflict="surface"` (factory-plan Step 2d):
+surface keeps both facts pending for the human; here the audit is the cold-eyes actor that *acts on*
+the overlap. After any `reject_fact` or `edit_fact`, the `prd-<project>` snapshot must be re-saved or
+the durable plan still carries the redundancy.
+
 ## Step 2 — Route underspecification (research / default / ask / defer)
 
 When a challenge exposes that a requirement can't carry a *correct, complete* binary acceptance
@@ -149,7 +180,10 @@ from ending** (so you can't `save_snapshot` and call it hardened) until ALL hold
   construction* — detection was skipped — so it is THIS audit's cold-eyes conflict challenges, not the
   empty queue, that are the real contradiction net; say `raw` was used in the artifact);
 - every requirement has ≥1 challenge and **no open challenge** (all resolved/dismissed/deferred with
-  a recorded resolution);
+  a recorded resolution); a **near-duplicate / overlap** challenge is only closed once the graph
+  reflects it — the loser `reject_fact`ed, or the overlapping fact `edit_fact`-narrowed + cross-linked,
+  or explicitly kept-as-distinct with a recorded rationale — and the `prd-<project>` snapshot re-saved
+  (a free-text annotation alone does NOT close it);
 - rigorous mode: every gap-lens logged for every requirement;
 - the **technical decisions** are complete for this system: `techDecisions` is non-empty and every
   entry is closed (resolved / deferred-with-reason / na-with-reason), AND the independent
@@ -233,6 +267,10 @@ Mode-aware, like the rest of this skill:
 - Never `save_snapshot` (bless the plan) with the audit `status:"open"` or any open challenge.
 - Never let the agent that drafted a requirement be its *only* skeptic — use the cold-eyes sub-agent.
 - Never dismiss a challenge without a recorded reason, or default over a genuine product fork.
+- Never "close" a near-duplicate / overlap challenge with a free-text note alone — write it back to the
+  graph (`reject_fact` the subsumed loser, or `edit_fact`-narrow + cross-link the overlapping fact, or
+  keep-as-distinct with a recorded rationale) and **re-save the `prd-<project>` snapshot**. On the
+  `raw=True` fast-lane this write-back is the ONLY dedup step — leaving redundant facts active is a leak.
 - Never bless a plan with no automated test strategy, a platform-required layer missing (e.g. a
   mobile build with no device/simulator e2e), or any test layer / CI gate lacking a binary condition.
 - Never hand-edit the manifest to `passed` — the gate (with its independent `plan_gate` re-run) decides.
