@@ -8,10 +8,10 @@ Update at the end of every pass. Newest entries at the bottom of each section.
 
 ## NEXT (the resume pointer)
 
-1. **Build R11 (weekly theme)** — exactly one active theme per (team, week); **R12 (daily prompt)**
-   — exactly one prompt per (team, date), response_type ∈ {text_short, multiple_choice,
-   rating_1_5, rating_1_10}; **R13 (notifications)** — ≤1 daily + ≤1 streak-save reminder, never
-   implying individual noncompliance.
+1. **Build R13 (notifications)** — per athlete per team-day, at most one daily reminder + at most
+   one streak-save reminder fire, and no reminder names or implies a specific non-completing
+   athlete (PRD §7). Add `team_app/notifications.py` (a scheduler that, given a team-day's state,
+   returns the ≤2 reminders to send, each with safe non-shaming copy) + tests.
 2. Then **auth + roles wiring** (PRD §1) and a **thin runnable local entry point** (e.g. a single
    `team_app/app.py` that assembles a team-day view from the stores) so the app "runs locally."
 3. Continue passes until DoD (CONSTITUTION §1). Build order: CONSTITUTION §6.
@@ -39,15 +39,15 @@ standalone Praxis requirement — realized in code (episode `df98fd8b`).
 | R7  | Coach visibility (per-athlete) | `team_app/roles.py`+`views.py` | ✅ built, green |
 | R8  | Submission idempotency | `team_app/submissions.py` | ✅ built, green |
 | R9  | Captain message + approval | `team_app/messages.py` | ✅ built, green |
-| R11 | Weekly theme | — | ⛔ todo |
-| R12 | Daily prompt | — | ⛔ todo |
-| R13 | Notifications | — | ⛔ todo |
+| R11 | Weekly theme | `team_app/content.py` | ✅ built, green |
+| R12 | Daily prompt | `team_app/content.py` | ✅ built, green |
+| R13 | Notifications | — | ⛔ next |
 | R14 | Data model wiring | — | ⛔ todo |
 | —   | Auth + roles | — | ⛔ todo (PRD §1) |
 | —   | Local runnable entry point | — | ⛔ todo |
 
-Test suite: **46 passing** (completion 4 + participation 4 + roster 6 + streak 6 + day_boundary 6
-+ submissions 7 + views/roles 5 + messages 8) as of last build.
+Test suite: **55 passing** (completion 4 + participation 4 + roster 6 + streak 6 + day_boundary 6
++ submissions 7 + views/roles 5 + messages 8 + content 9) as of last build.
 
 ## Plan status (Praxis `agent-factory` org / `prd-team-app` snapshot)
 
@@ -117,6 +117,10 @@ reverted (§12). Tax domain — leave alone per owner constraint.
 
 ## Pass history
 
+- **2026-06-26 Pass 7:** §1b gate: praxis HEAD unchanged (`5370659`) → tooling green, skipped.
+  Built **R11 weekly theme + R12 daily prompt** (`team_app/content.py`: WeeklyThemeStore +
+  DailyPromptStore, one-per-key upsert, response_type validation; 9 tests). Suite 55 green.
+  Episode `efcd8d4c` + `record_outcome(R11, R12)`. Commit `d087778`. No bug. Next: R13.
 - **2026-06-26 Pass 6:** §1b gate: praxis HEAD unchanged (`5370659`) → tooling still green,
   skipped re-verify. Built **R9 captain/coach message + optional approval** (`team_app/messages.py`:
   role-gated post, coach-only approve, team-scoped visibility, single-active-captain supersede,
