@@ -182,6 +182,13 @@ and report its `reasons`. It is covered by the eval suite under `evals/cases/pla
 `pytest tests/test_eval_cases.py`) — add a new `case.yaml` there whenever a fresh gate edge case is
 found, so the gate's coverage compounds the same way the graph does.
 
+**The judgment pushback runs as a separate, enforced step.** Move 2c's adversarial pass is the
+inline, interactive version for human-led planning. When you arrive here via the intake pipeline,
+the cold-eyes adversarial + underspecification audit is **`factory-audit`** — a distinct step over
+the admitted-but-not-yet-blessed set, gated by a Stop hook (which independently re-runs `plan_gate`)
+so the plan cannot be snapshotted until every requirement is challenged-and-resolved. Run it before
+`save_snapshot`.
+
 **Stop by information-gain, not by exhaustion.** When the next question's expected information
 gain is low and the gate is reachable, say so and STOP asking — do not loop. Beware the
 under-specification trap: zero contradictions on a thin plan is not "done," it's "nothing was

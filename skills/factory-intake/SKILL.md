@@ -121,6 +121,10 @@ its input. factory-plan runs unchanged:
   its `uncoveredSurfaces` (a screen with no backing requirement) and `uncoveredRequirements` (an MVP
   requirement with no screen) must both be empty, or each exception justified, before the done-gate
   clears.
+- Then run **`factory-audit`** — the separate cold-eyes judgment pass (adversarial challenge +
+  underspecification routing + cross-requirement gaps) over the admitted-but-not-yet-blessed set.
+  Its Stop-hook gate blocks the snapshot until plan_gate passes, contradictions are empty, and every
+  requirement is challenged-and-resolved. Admit *during* ingestion; audit + bless as this last step.
 - Human clears the gate → `save_snapshot("prd-<project>")`.
 
 ## Step 3 — Persist the surface↔requirement binding (first-class `renders` relation)
