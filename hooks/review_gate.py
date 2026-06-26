@@ -120,8 +120,8 @@ def main() -> None:
                           "high-risk work. Run the panel, or set forceSkip:true with an explicit "
                           "human-override reason in skipReason")
         if not misses:
-            _allow(f"factory-review gate: SKIPPED ({phase} review for {project}) — "
-                   f"{'override' if force_skip and not small else 'small work'}: {reason}")
+            _allow()  # legitimately skipped -> allow SILENTLY (the skipReason is in the manifest;
+            # re-announcing every stop just nudges the model to respond again)
     else:
         # pending OR done -> recompute; "done" earns nothing without the evidence.
         if not panel_ran:
@@ -133,13 +133,17 @@ def main() -> None:
                 misses.append(why)
 
         if not misses:
-            if status != "done":
-                man["status"] = "done"
-                try:
-                    with open(manifest_path, "w", encoding="utf-8") as fh:
-                        json.dump(man, fh, indent=2)
-                except Exception:
-                    pass
+            if status == "done":
+                # already cleared on a prior stop -> allow SILENTLY (no per-stop PASSED spam that
+                # keeps re-nudging the model; the manifest already records the done state).
+                _allow()
+            # fresh pending -> done transition: flip and announce ONCE.
+            man["status"] = "done"
+            try:
+                with open(manifest_path, "w", encoding="utf-8") as fh:
+                    json.dump(man, fh, indent=2)
+            except Exception:
+                pass
             r = sum(1 for f in findings if str(f.get("status", "")).lower() == "resolved")
             a = sum(1 for f in findings if str(f.get("status", "")).lower() == "accepted")
             _allow(f"factory-review gate: PASSED — {phase} review for {project} complete; panel "
