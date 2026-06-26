@@ -4,18 +4,70 @@ A Praxis-backed **agent factory** delivered as a Claude Code plugin: a single-ag
 plan → execute → verify loop with compounding memory, coding-first behind a general
 task + oracle seam.
 
-- **Knowing system** → [Praxis](../praxis) knowledge graph (retrieval, dedup,
+- **Knowing system** → [Praxis](https://github.com/Antonelli-Tech-Solutions/praxis) knowledge graph (retrieval, dedup,
   contradiction handling, provenance), reached via the `praxis_*` MCP tools.
 - **Doing system + glue** → this repo: skills that drive the loop, plus small
   deterministic helpers in `src/agent_factory/`.
 
-See `docs/` for the full picture:
-- `docs/agent-factory-vision.md` — the why.
-- `docs/agent-coding-factory-reference.md` — neutral reference model.
-- `docs/praxis-and-how-we-use-it.md` / `docs/praxis-gaps.md` — the substrate and its holes.
-- `docs/factory-local-components.md` — what we build here.
-- `docs/brainstorms/2026-06-25-agent-factory-product-shape-requirements.md` — product shape.
-- `docs/plans/2026-06-25-agent-factory-build-plan.md` — the build plan (milestones M0–M5).
+See [docs/](/docs/) for the full picture:
+- [docs/agent-factory-vision.md](/docs/agent-factory-vision.md) — the why.
+- [docs/agent-coding-factory-reference.md](/docs/agent-coding-factory-reference.md) — neutral reference model.
+- [docs/praxis-and-how-we-use-it.md](/docs/praxis-and-how-we-use-it.md) / [docs/praxis-gaps.md](/docs/praxis-gaps.md) — the substrate and its holes.
+- [docs/factory-local-components.md](/docs/factory-local-components.md) — what we build here.
+- [docs/brainstorms/2026-06-25-agent-factory-product-shape-requirements.md](/docs/brainstorms/2026-06-25-agent-factory-product-shape-requirements.md) — product shape.
+- [docs/plans/2026-06-25-agent-factory-build-plan.md](/docs/plans/2026-06-25-agent-factory-build-plan.md) — the build plan (milestones M0–M5).
+
+## Install
+
+The factory ships as a Claude Code plugin. Install it from a local clone:
+
+```bash
+git clone https://github.com/MatthewDaw/agent_factory.git
+```
+
+Then, in Claude Code, register the clone as a plugin marketplace and install the plugin:
+
+```
+/plugin marketplace add ./agent_factory
+/plugin install agent-factory@agent-factory-local
+```
+
+`/plugin marketplace add` accepts the path to your clone (the directory containing
+[.claude-plugin/marketplace.json](/.claude-plugin/marketplace.json)). After installing,
+run `/plugin` to confirm `agent-factory` is enabled.
+
+## Prerequisite: Praxis
+
+The factory's knowing system is **Praxis**, a separate knowledge-graph service reached
+through its `praxis_*` MCP tools. Installing this plugin does **not** install or configure
+Praxis — you need a running Praxis instance (local or hosted) and its MCP server registered
+in your Claude Code config before the factory's memory operations will work.
+
+For how to run Praxis and register its MCP server, follow the setup docs in the
+**[Praxis repository](https://github.com/Antonelli-Tech-Solutions/praxis)**. See
+[docs/praxis-and-how-we-use-it.md](/docs/praxis-and-how-we-use-it.md) for
+how the factory connects (HTTP vs MCP, local vs prod backends) and the tenancy rules it
+relies on.
+
+## Usage
+
+Once the plugin is installed and Praxis is reachable, Claude Code activates these skills
+from intent — describe the task and the matching skill runs (you can also invoke one by
+name, e.g. `factory-plan`):
+
+- **factory-plan** — harden a PRD or rough idea into a self-consistent plan, saved as its
+  own `prd-<project>` Praxis snapshot. Human-controlled: you clear the gate.
+- **factory-execute** — build a task from that hardened plan: assemble context, do the
+  work, gate it, and write confirmed learnings back.
+- **factory-verify** — the pass/fail gate `factory-execute` runs against **external**
+  signals only (tests, build, type-check, lint).
+- **factory-memory** — the single policy surface for all Praxis reads/writes; used by the
+  other skills, rarely invoked directly.
+- **factory-wireframe** — standalone one-shot: turn a PRD into complete, clickable HTML
+  wireframes with a self-audited coverage gate.
+
+Typical flow: harden the plan with `factory-plan`, then run `factory-execute` against it.
+For a quick visual from a spec, point `factory-wireframe` at a PRD.
 
 ## Layout
 
