@@ -117,8 +117,9 @@ When a Praxis or factory failure appears:
    coding_factory cases (`derived_learning_not_merged_into_source`,
    `contradicting_requirement_not_merged`, `tabular_field_not_merged_into_incumbent`). The
    case docstring must record the live observation + the desired GREEN behavior. **Run the
-   check and confirm it reports RED** before moving on. (Set `augment_model` when the Augmenter
-   judge is involved; the check `SKIP`s without a DSN/key but must reproduce when they exist.)
+   check and confirm it reports RED** before moving on (see **§11** for exactly how to run a
+   case). (Set `augment_model` when the Augmenter judge is involved; the check `SKIP`s without a
+   DSN/key but must reproduce when they exist.)
 5. **FIX it in Praxis** (this is the new part — the owner is asleep, so you close the loop):
    - First check whether the bug is **already being fixed** in the Praxis working tree
      (`git status` — another agent may have staged exactly this area, e.g. the Augmenter /
@@ -127,7 +128,10 @@ When a Praxis or factory failure appears:
    - Otherwise make the **minimal** fix in the relevant Praxis module. Do not regress the
      positive-merge / additive cases (`matt/augment_additive_merge` etc.).
    - Re-run the new eval's check → it must flip **RED→GREEN**. Then run the broader
-     `coding_factory/` + `matt/` checks you can run offline to confirm no regression.
+     `coding_factory/` + `matt/` checks you can run offline to confirm no regression
+     (**§12** lists the exact sibling cases + unit tests, and how to tell a real failure from a
+     cassette flake). **Restart the Praxis server (§13)** so the factory/MCP path picks up your
+     fix — a stale server validates against pre-fix code.
 6. **Commit carefully — INDEX HYGIENE IS MANDATORY.** The Praxis repo has concurrent activity
    (another agent's staged WIP) and the owner's tax-return work. **Never `git add .`. Never
    commit the index blind.** Always `git status` first, then commit ONLY your explicit files
@@ -227,3 +231,122 @@ Each invocation is one or more passes and is fully resumable:
 **read ledger → orient → run pass(es) → update ledger → commit → continue.**
 There is no "are we done?" question to ask — §1 is the objective test. While it is unmet and a
 safe next action exists, keep going. Make your best choice, record it, and move forward.
+
+---
+
+## 11. Running Evals (the HOW — offline mechanics)
+
+All commands run from the Praxis repo (`C:/Users/mattd/Documents/gauntlet/praxis`). Use the
+Praxis venv python (`.venv/Scripts/python.exe`) or `uv run --no-sync python`.
+
+**One-time setup per machine/session:**
+1. **Postgres.** The eval cases that drive the write policy need a local Postgres+pgvector.
+   The owner's dev DB is already up as the container `praxis-db-kg` on **host port 5433**
+   (this is what the running server uses). Eval cases isolate to **ephemeral random tenants**,
+   so running them against 5433 will not touch the `agent-factory` org — but if you want zero
+   risk, start a throwaway:
+   `docker run -d --name praxis-eval-pg -e POSTGRES_USER=praxis -e POSTGRES_PASSWORD=praxis -e POSTGRES_DB=praxis_kg -p 5439:5432 pgvector/pgvector:pg16`
+   then `export PRAXIS_DB_URL="postgresql://praxis:praxis@localhost:5439/praxis_kg"` and migrate
+   once: `python -m knowledge.serve.db`. (Port 5433 is already migrated; a fresh container is not.)
+2. **Env.** `set -a; . ./.env; set +a` loads `OPENROUTER_API_KEY`. Always also set
+   `export OTEL_SDK_DISABLED=true` — otherwise the Phoenix tracing exporter retries failed SSL
+   for minutes and makes runs look hung.
+
+**Run a case:**
+`python -m knowledge.evals.run <case_id> [<case_id> ...] <backend> [--workers N]`
+- **Backends:** `--openrouter` (cheap single-shot — use for `component: knowledge_graph` /
+  `graph_reader` cases, i.e. all `coding_factory/*` and the recall/distillation cases);
+  `--structured` (file-artifact grading, for `needs: [file_io]` cases); **default = real Claude
+  Code** (the heavy agent backend for `file_io` cases — SLOW, ~1–3 min/case; avoid it for quick
+  iteration, it is not needed to validate write-policy fixes).
+- **`--workers N`** runs N cases concurrently (independent, I/O-bound on LLM calls). Use 4–6.
+  Cassette writes are locked, so parallel recording is safe.
+- A case `[SKIP]`s when it needs a capability the backend/cassette can't provide (e.g. a
+  `file_io` case under `--openrouter`, or a missing cassette keyless) — a skip is not a pass.
+
+**THE CASSETTE MODEL — internalize this, it is the #1 cause of false regressions:**
+Every LLM/judge/embedding call is cassette-backed (`knowledge/evals/fixtures/...`), keyed on a
+hash of the **payload + model id**.
+- **With `OPENROUTER_API_KEY` set:** a hit replays for free; a **miss computes live AND writes
+  the result back into the committed fixture** (write-through). So *running an eval with the key
+  mutates fixture files in your working tree.* That is expected — those diffs are recorded
+  cassettes, not corruption.
+- **Without a key (keyless):** replay-only. A miss is a **loud error**, never a silent live call.
+  This is what CI does, so it is fully deterministic.
+- **Determinism check:** to know if a pass/fail is real vs a lucky live recording, re-run the
+  same case **keyless** (`unset OPENROUTER_API_KEY`). Keyless replay is the source of truth. A
+  case that passes with the key but flakes/fails keyless has an incomplete or unlucky cassette.
+- **Changing a judge/distill PROMPT invalidates cassettes** (the prompt is in the payload key) →
+  mass miss → every affected case must be re-recorded with the key. Big blast radius; treat
+  prompt edits as expensive and verify they don't regress the *other* recall checks before
+  committing (see §12).
+- **Deliberate cassette regen:** `python -m knowledge.evals.verdict_cache --refresh` (records
+  merge/conflict/aspect verdicts for cases that set `merge_model`/`conflict_model`/`tag_model`,
+  and fills embedding misses). Commit the refreshed fixtures.
+
+**Note:** CI (`pytest`) does NOT run the eval *cases* — it runs unit tests + its own cassettes.
+So making an eval case GREEN is for the harden loop (§5), not for CI gating. CI is validated
+separately by `pytest` (see §12).
+
+---
+
+## 12. Avoiding Regressions (mandatory after any Praxis fix)
+
+A "fix" is not done until you've shown it didn't break the cases it wasn't aimed at.
+
+1. **Unit tests (fast, deterministic, no key needed — just `PRAXIS_DB_URL`):**
+   `python -m pytest -q knowledge/knowledge_graph/write_policy/tests` (48 tests; the write-policy
+   guardrails). For a full keyless CI-equivalent run: `python -m pytest -q` (needs Postgres).
+2. **Sibling eval cases** most likely to regress from a write-policy change — run keyless or with
+   the key, `--openrouter`: `augment_no_merge_distinct_rules`, `plan_requirements_kept_distinct`,
+   `semantic_no_conflict_distinct_actors`, `semantic_no_conflict_storage_target`, plus the four
+   `coding_factory` cases. These cover both "should stay distinct" and "should still merge"
+   directions — a guard that over-fires will redden them.
+3. **Real vs flake vs loss — do not paper over:**
+   - A failure that reproduces **keyless and deterministically** is real. Fix the code, not the
+     test.
+   - Do NOT make an eval green by doctoring its seed data, loosening an assertion to match buggy
+     output, or cherry-picking a lucky cassette recording. That hides the very loss the eval
+     exists to catch. (Lesson this session: `matt_tax_return_ruleset_distillation`'s rounding
+     checks fail because the distiller collapses a compound "…: drop X; increase Y" sentence down
+     to the summary clause — a genuine distillation loss. A `SPLIT_PROMPT` tweak to fix it
+     *regressed* the other 9 recall checks (42→35) and was reverted. This is an OPEN, real bug —
+     left RED with this note, per §3's timebox rule. Do not "fix" it by editing the seed.)
+4. If a change's blast radius is large (prompt/policy edits), re-record **and** re-verify the
+   broad set before committing; note the regen in the ledger.
+
+---
+
+## 13. Restarting the Praxis Server (so tests & the factory run against updated code)
+
+The MCP server / `praxis_*` factory tools and any HTTP client talk to a **long-running**
+`python -m knowledge.serve` process (loads `.env`, connects to `PRAXIS_DB_URL` on :5433, serves
+`http://127.0.0.1:8000`). It is **not** started with `--reload`, so **after you edit any Praxis
+module the running server keeps executing the OLD code** until you restart it. A stale server
+means tests/the factory validate against pre-fix behavior — silently. So:
+
+**After any Praxis code change that the factory/server exercises, restart it:**
+```bash
+# 1. find the listener on :8000
+netstat -ano | grep ":8000.*LISTEN"          # note the PID in the last column
+# 2. stop it (PowerShell)
+powershell -NoProfile -Command "Stop-Process -Id <PID> -Force"
+# 3. relaunch in the background (loads .env itself; do NOT add --reload — unsupported here)
+cd C:/Users/mattd/Documents/gauntlet/praxis && uv run --no-sync python -m knowledge.serve &
+# 4. health-check
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8000/health   # expect 200
+```
+- The server reads `.env` on boot, so make sure `PRAXIS_DB_URL` there still points at the live
+  dev DB (`:5433` / container `praxis-db-kg`) before restarting — do not point it at an eval
+  throwaway DB, or the factory loses the `agent-factory` graph.
+- `/` returns 404 (no root route); use `/health` (200) and `/docs` (200) to confirm liveness.
+- **Architecture (verified):** the `praxis_*` MCP server (`knowledge.mcp.server`) is a **thin
+  httpx proxy to `:8000`** (`DEFAULT_API_BASE=http://localhost:8000`) — it holds NO graph logic.
+  So a Praxis code fix is picked up by the **`:8000` restart above alone**; the stdio MCP process
+  does NOT need restarting for code changes. **Exception:** editing `knowledge/mcp/server.py`
+  itself (tool signatures, the httpx timeout, the proxy layer) only takes effect when the stdio
+  MCP process reconnects — which is **harness-managed and cannot be triggered from within the
+  run**. If a fix requires that, do NOT pretend it took effect: stop, note it in the ledger as a
+  human-action item, and route around it.
+- Unit tests (`pytest`) spin up their own app/DB fixtures and do NOT need the server running;
+  only the **factory / live MCP path** needs the restart to see new code.
