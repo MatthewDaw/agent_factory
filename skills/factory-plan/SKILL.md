@@ -54,9 +54,19 @@ Then run the tenancy lifecycle through `factory-memory`:
    `constitution` (invariants, if it exists), and any relevant prior `prd-<project>` or research
    snapshot. Mounted facts inform retrieval but never enter the PRD snapshot.
 4. Write each settled requirement with **`add_insight(..., on_conflict="surface")`** (tabular
-   content via the linearizer first), stamping `source="prd-<project>"`, `category="requirement"`,
-   and `meta={"requirement_id": "<R-id>"}` so it's citable and the R-id↔fact mapping survives in
-   Praxis (read back via `praxis_get_fact`). Surface mode is mandatory during planning.
+   content via the linearizer first), stamping **`source="prd-<project>"` as the project identity**,
+   `category="requirement"`, and `meta={"requirement_id": "<R-id>"}` so it's citable and the
+   R-id↔fact mapping survives in Praxis (read back via `praxis_get_fact`). Surface mode is mandatory
+   during planning.
+
+   **`source="prd-<project>"` is the project identity — it is NOT `meta.scope`.** `source` binds the
+   requirement to its PRD (`prd-team-app`, `prd-foo`, …) and is what the downstream completeness
+   query (`praxis_incomplete_requirements(prd-<project>)`) and the done-gate's `R-HAS-SOURCE` rule
+   filter on; `meta.scope` is the orthogonal mvp/post-mvp **tier** tag (read by `build_target.py`).
+   A requirement tagged only with `scope="team-app"` and **no** `source="prd-<project>"` is the exact
+   generation drift that went uncaught: it never matched the completeness filter, so the build
+   wrongly believed every requirement was done. Every admitted requirement MUST carry
+   `source="prd-<project>"` — there is no source-less requirement.
 
 **Verified Praxis behavior (2026-06-25):** with `on_conflict="surface"`, a detected contradiction
 is **surfaced, not auto-resolved** — both facts are kept (incumbent stays `active`, newcomer lands
@@ -168,6 +178,8 @@ correction": route it through the graph you already trust, don't kick off specul
 
 A plan is **done** only when all hold — report status against each, never declare it yourself:
 - Every requirement maps to ≥1 binary acceptance condition (or is an explicitly-deferred owned decision).
+- **Every requirement carries `source="prd-<project>"`** (the project identity). A requirement with
+  a missing or mis-scoped source is mechanically rejected by the gate's `R-HAS-SOURCE` rule below.
 - **Zero unresolved contradictions** in the live graph.
 - **No dangling concept reference (H14)** — every domain concept a requirement *references* is
   *defined* by some admitted requirement or explicitly declared out of scope. This is the hole that
@@ -177,8 +189,13 @@ A plan is **done** only when all hold — report status against each, never decl
   auth bypass, irreversible action, silent partial failure.
 
 The mechanical half of this gate (binary-acceptance present, no unquantified vague term, no dangling
-reference) is executable, not eyeballed: run `agent_factory.plan_gate.evaluate_plan(requirements)`
-and report its `reasons`. It is covered by the eval suite under `evals/cases/plan_gate/` (run
+reference, **and project source present** — `R-HAS-SOURCE`) is executable, not eyeballed: run
+**`agent_factory.plan_gate.evaluate_plan(requirements, project="<project>")`** — passing the project
+explicitly, with **each requirement carrying its `source="prd-<project>"`** — and report its
+`reasons`. The `project=` argument is mandatory: with it the gate requires every requirement's
+`source` to equal `prd-<project>` exactly, so a source-less or mis-scoped plan is mechanically
+**rejected** (this is the drift that went uncaught when the gate was run without project+source). It
+is covered by the eval suite under `evals/cases/plan_gate/` (run
 `pytest tests/test_eval_cases.py`) — add a new `case.yaml` there whenever a fresh gate edge case is
 found, so the gate's coverage compounds the same way the graph does.
 

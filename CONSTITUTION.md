@@ -95,8 +95,14 @@ Each pass is one slice of forward progress. Run this checklist top to bottom:
 3. **Plan the slice** (factory-plan discipline). *Review leverage is inverse to distance from
    execution — a bad requirement spawns thousands of bad lines, a bad plan hundreds, a bad line of
    code just one — so spend the rigor here, on the facts, not on re-reading generated code:*
-   - Admit each requirement via `praxis_add_insight(..., category="requirement",
-     meta={"requirement_id": "R<n>"}, on_conflict="surface")`.
+   - Admit each requirement via `praxis_add_insight(..., source="prd-team-app",
+     category="requirement", meta={"requirement_id": "R<n>"}, on_conflict="surface")`.
+     **`source="prd-<project>"` (here `prd-team-app`) is the project identity** — it is what
+     `praxis_incomplete_requirements(prd-team-app)` (§1) and the done-gate's `R-HAS-SOURCE` rule
+     filter on, and is distinct from `meta.scope` (the mvp/post-mvp tier read by `build_target.py`).
+     A requirement admitted with only a scope tag and no `source` never matches the completeness
+     query — that is the drift that made the build wrongly believe it was done. Never admit a
+     requirement without `source="prd-<project>"`.
    - **Workaround (until the atomic-ingest fix lands):** phrase each requirement as ONE
      semicolon-joined sentence so the sentence-splitter does not fragment it.
    - Give every requirement a **binary acceptance condition**. Replace vague terms with

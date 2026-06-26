@@ -14,16 +14,19 @@ input:
       acceptance: "with N active and K completed, pct = round(K/N*100); N=0 -> None; N=0 day leaves the team streak unchanged."
       defines: ["participation percentage"]
       references: ["daily completion", "active roster", "team streak"]
+      source: "prd-team-app"
     - id: R1
       text: "A submission is completed when the daily rep AND all three ratings are submitted."
       acceptance: "completed=true iff rep present and all three ratings non-None."
       defines: ["daily completion"]
       references: []
+      source: "prd-team-app"
     - id: R3
       text: "Active excludes athletes the coach marked inactive; captains count as athletes."
       acceptance: "is_active_athlete=true iff role in {athlete, captain} and not inactive."
       defines: ["active roster"]
       references: []
+      source: "prd-team-app"
   out_of_scope: []
 rule_ids: ["R-NO-DANGLING"]
 deterministic_checks:

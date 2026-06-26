@@ -71,6 +71,14 @@ EXPECTED_VERDICTS = {
             "(define it in a requirement or declare it out of scope)",
         ],
     },
+    "plan_gate_missing_project_source_rejected": {
+        "admitted": False,
+        "rule_ids": ["R-HAS-SOURCE"],
+        "messages": [
+            "R1: missing/!= project source (expected prd-team-app, got 'team-app')",
+            "R2: missing/!= project source (expected prd-team-app, got '')",
+        ],
+    },
 }
 
 

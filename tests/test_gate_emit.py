@@ -18,7 +18,7 @@ from agent_factory.gate import (
 def test_emit_gate_result_appends_one_gate_result_event(tmp_path):
     log = EventLog("emit-probe", root=tmp_path)
     verdict = REGISTRY["plan_gate"].evaluate(
-        {"requirements": [{"id": "R1", "text": "x", "acceptance": ""}]}
+        {"requirements": [{"id": "R1", "text": "x", "acceptance": "", "source": "prd-team-app"}]}
     )
     rec = emit_gate_result(log, "plan_gate", verdict, task_id="task-1")
 

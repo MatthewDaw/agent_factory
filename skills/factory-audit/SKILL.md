@@ -117,7 +117,7 @@ from ending** (so you can't `save_snapshot` and call it hardened) until ALL hold
   "contradictionsEmpty": false, "out_of_scope": ["..."],
   "requirements": [
     {
-      "id": "R1", "text": "...", "acceptance": "...",
+      "id": "R1", "text": "...", "acceptance": "...", "source": "prd-team-app",
       "defines": ["completion"], "references": ["daily rep", "ratings"],
       "challenges": [
         {"type": "unhandled-empty-case", "statement": "what if zero ratings submitted?",

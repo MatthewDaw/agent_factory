@@ -28,30 +28,54 @@ entry; cite the fact(s) that grounded each decision.
   requirement from `praxis_incomplete_requirements(prd-<project>)` (§0b), in dependency order. Do
   tasks **serially** (single agent; also respects the serial-write rule).
 
-## 0b. Drive to completeness (the worker is FORCED to iterate until every requirement is done)
+## 0b. Drive to completeness (the worker is FORCED to iterate until the build set is done)
 
-The build is **not done when the agent thinks so** — it's done when
-**`praxis_incomplete_requirements(prd-<project>)` returns empty** (PR #106). That query derives
-completeness from *verified outcomes + staleness* (never-built / regressed / stale), so a
-requirement only counts complete once it has actually passed `factory-verify`.
+The build is **not done when the agent thinks so** — it's done when every requirement in the
+**build set** has passed `factory-verify`. Completeness is derived from *verified outcomes +
+staleness* (never-built / regressed / stale) via `praxis_incomplete_requirements(prd-<project>)`
+(PR #106), so a requirement only counts complete once it has actually passed verify.
+
+But `praxis_incomplete_requirements` returns **all** active requirements, which is the wrong target
+for an *automated* forced gate: post-mvp scope would make the gate chase forever, and manual-verify
+requirements can never earn an automated "succeeded" outcome (the gate would be structurally
+trapped). So the worker first **computes its completion target** with
+**`select_build_target`** (`src/agent_factory/build_target.py`), partitioning the requirements —
+using each one's plan tags, the tier (`meta.scope` ∈ {`mvp`, `post-mvp`}) and verify mode
+(`meta.verify` ∈ {`automated`, `manual`}) — into four disjoint groups:
+
+- **build** (`tier==mvp` AND `verify==automated`) — the gate's completion set. The **only**
+  requirements the forced loop is responsible for finishing.
+- **deferred_manual** (`tier==mvp`, `verify==manual`) — in-scope for the MVP but parked: recorded
+  separately and surfaced to the human (no automated success signal is possible). **Never blocks the
+  gate.**
+- **excluded_post_mvp** (`tier==post-mvp`, any verify) — recorded as out-of-scope for this build.
+- **needs_triage** (missing/unrecognized tier or verify) — **surface loudly**: a mis-tagged
+  requirement must NOT be silently auto-built. Routing it here forces a human to fix the tag.
 
 Run the build as a forced loop:
-1. At build start, write `<project>/.factory/build-status.json` with `status:"building"`, the
-   `project`, and the current `praxis_incomplete_requirements` result (`incompleteCount`,
-   `incomplete:[{id,reason}]`). This **arms the build-completeness gate**
+1. At build start, query `praxis_incomplete_requirements(prd-<project>)`, run the result (joined with
+   the plan's tier/verify tags) through `select_build_target`, and write
+   `<project>/.factory/build-status.json` with `status:"building"`, the `project`, and the
+   **build-set-only** completion target: `incompleteCount` / `incomplete:[{id,reason}]` counting
+   **ONLY the build group** (mvp+automated still incomplete). Record the other groups separately for
+   transparency: `deferredManual:[{id}]`, `excludedPostMvp:[{id}]`, `needsTriage:[{id}]` — these are
+   surfaced, never folded into `incompleteCount`. This **arms the build-completeness gate**
    (`hooks/build_completeness_gate.py`).
-2. Each pass: pick the next incomplete requirement (dependency order, then `never-built` →
-   `regressed` → `stale`), build it (§1), gate via `factory-verify`, and on a verified pass call
-   `praxis_record_outcome(req, "succeeded")` (and `"failed"` on a failed attempt).
-3. **Re-query** `praxis_incomplete_requirements` and rewrite the manifest (bump `checkedAt`, refresh
-   `incompleteCount`/`incomplete`).
+2. Each pass: pick the next incomplete requirement **from the build set** (dependency order, then
+   `never-built` → `regressed` → `stale`), build it (§1), gate via `factory-verify`, and on a
+   verified pass call `praxis_record_outcome(req, "succeeded")` (and `"failed"` on a failed attempt).
+3. **Re-query** `praxis_incomplete_requirements`, re-partition via `select_build_target`, and rewrite
+   the manifest (bump `checkedAt`, refresh `incompleteCount`/`incomplete` over the **build set**, and
+   the `deferredManual`/`excludedPostMvp`/`needsTriage` lists).
 4. Repeat. The Stop hook **blocks the turn from ending while `incompleteCount > 0`** — you cannot
-   stop or declare the build done until the query is empty. At 0 the gate flips the manifest to
-   `done` and lets you finish.
+   stop or declare the build done until the build set is empty. At 0 the gate flips the manifest to
+   `done` and lets you finish. Before finishing, **surface** any `deferredManual` (hand to the human)
+   and `needsTriage` (mis-tagged — must be resolved) items; they were never built by the loop.
 
 To intentionally yield (hand back to the human, or a hard blocker you can't pass), set
 `status:"paused"` in the manifest and say why — never fake `incompleteCount`. Completeness is
-outcome-grounded, so the only honest way to reach 0 is to actually build and verify everything.
+outcome-grounded, so the only honest way to reach 0 is to actually build and verify the whole build
+set.
 
 ## 1. Per-task loop
 

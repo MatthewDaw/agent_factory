@@ -90,10 +90,17 @@ def _plan_gate_misses(man):
             acceptance=r.get("acceptance", ""),
             defines=r.get("defines", []),
             references=r.get("references", []),
+            source=r.get("source", ""),
         )
         for r in man.get("requirements", [])
     ]
-    verdict = evaluate_plan(reqs, out_of_scope=man.get("out_of_scope", []))
+    # Pass the bare project (strip a leading "prd-") so the R-HAS-SOURCE rule checks
+    # source == "prd-<project>" exactly; if the manifest records no project, project=None
+    # falls back to requiring a well-formed "prd-..." source. The manifest MUST record each
+    # requirement's `source` (factory-audit §4) or this correctly flags the source-less drift.
+    raw_project = man.get("project")
+    project = raw_project[4:] if isinstance(raw_project, str) and raw_project.startswith("prd-") else raw_project
+    verdict = evaluate_plan(reqs, out_of_scope=man.get("out_of_scope", []), project=project)
     return [f"plan_gate: {rsn.message}" for rsn in verdict.reasons], True
 
 

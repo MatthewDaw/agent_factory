@@ -37,6 +37,15 @@ from agent_factory.gate import Reason, Verdict, register
 R_ACCEPT_BINARY = "R-ACCEPT-BINARY"  # every requirement maps to >=1 binary acceptance
 R_NO_VAGUE = "R-NO-VAGUE"            # no unquantified vague term without a threshold
 R_NO_DANGLING = "R-NO-DANGLING"      # every referenced concept is defined or out of scope
+R_HAS_SOURCE = "R-HAS-SOURCE"        # every requirement carries its project source tag
+
+# A requirement's ``source`` must name the project's PRD (``prd-<project>``). When the
+# gate is told the project, the tag must equal ``prd-<project>`` exactly; otherwise it
+# must at least be a non-empty ``prd-...`` tag. This catches the generation-drift escape
+# where requirements were tagged ``scope="team-app"`` with NO ``source="prd-team-app"``,
+# so the Praxis completeness query (which filters ``source="prd-<project>"``) returned
+# empty and the build wrongly believed everything was done.
+SOURCE_RE = re.compile(r"^prd-.+")
 
 # Vague qualifiers that must be replaced with a measurable threshold before a
 # requirement is admitted. Matched as whole words/phrases, case-insensitively.
@@ -72,6 +81,7 @@ class Requirement:
     acceptance: str = ""
     defines: list[str] = field(default_factory=list)
     references: list[str] = field(default_factory=list)
+    source: str = ""
 
 
 # The gate's decision type is the shared contract :class:`Verdict` (reasons carry a
@@ -89,7 +99,9 @@ def _vague_terms_in(text: str) -> list[str]:
 
 
 def evaluate_plan(
-    requirements: list[Requirement], out_of_scope: list[str] | None = None
+    requirements: list[Requirement],
+    out_of_scope: list[str] | None = None,
+    project: str | None = None,
 ) -> Verdict:
     """Run the done-gate over a PRD's requirements; return admit/reject + reasons.
 
@@ -98,16 +110,39 @@ def evaluate_plan(
     skill can report exactly what the human must fix and coverage can attribute the
     verdict to a rule. The admit/reject decision and message text are unchanged from the
     earlier string-reason form — only the reason carrier gained its ``rule_id`` field.
+
+    ``project`` is the project the PRD belongs to. When given, every requirement's
+    ``source`` must equal ``f"prd-{project}"`` exactly; when omitted, ``source`` must be a
+    non-empty ``prd-...`` tag (``^prd-.+``). This is the ``R-HAS-SOURCE`` rule — a
+    requirement that lacks its project source tag is REJECTED, so generation drift cannot
+    slip a source-less plan past the gate and make the downstream completeness query
+    (which filters ``source="prd-<project>"``) silently return empty.
     """
     reasons: list[Reason] = []
     defined = {_norm(c) for r in requirements for c in r.defines}
     oos = {_norm(c) for c in (out_of_scope or [])}
     known = defined | oos
+    expected_source = f"prd-{project}" if project is not None else None
 
     for r in requirements:
         if not r.acceptance.strip():
             reasons.append(
                 Reason(R_ACCEPT_BINARY, f"{r.id}: no binary acceptance condition")
+            )
+
+        src = r.source.strip()
+        if expected_source is not None:
+            source_ok = src == expected_source
+        else:
+            source_ok = bool(SOURCE_RE.match(src))
+        if not source_ok:
+            expected = expected_source if expected_source is not None else "prd-<project>"
+            reasons.append(
+                Reason(
+                    R_HAS_SOURCE,
+                    f"{r.id}: missing/!= project source "
+                    f"(expected {expected}, got '{r.source}')",
+                )
             )
 
         for term in sorted(set(_vague_terms_in(f"{r.text} {r.acceptance}"))):
@@ -148,10 +183,15 @@ class PlanGate:
                 acceptance=r.get("acceptance", ""),
                 defines=r.get("defines", []),
                 references=r.get("references", []),
+                source=r.get("source", ""),
             )
             for r in input.get("requirements", [])
         ]
-        return evaluate_plan(requirements, out_of_scope=input.get("out_of_scope", []))
+        return evaluate_plan(
+            requirements,
+            out_of_scope=input.get("out_of_scope", []),
+            project=input.get("project"),
+        )
 
 
 register("plan_gate", PlanGate())

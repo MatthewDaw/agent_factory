@@ -2,17 +2,25 @@
 """
 build-completeness gate — a Claude Code *Stop* hook.
 
-Forces the build worker (factory-execute) to keep iterating until EVERY requirement in the
-project is verified-complete. While a build is active, the worker cannot end its turn / declare
-done as long as any requirement is still incomplete (never-built / regressed / stale).
+Forces the build worker (factory-execute) to keep iterating until every requirement in the
+**build target** is verified-complete. While a build is active, the worker cannot end its turn /
+declare done as long as any build-target requirement is still incomplete (never-built / regressed /
+stale).
 
 Completeness is NOT self-judged: it comes from Praxis `incomplete_requirements(project)`, which is
-derived from verified outcomes + staleness (PR #106). This hook is a pure *local-file* check (it
-does not call Praxis itself — replicating the MCP's org/tenant auth from a hook is fragile), so the
-worker is responsible for re-querying each pass and writing the honest result into the manifest.
-The values can't be faked at the requirement level: a requirement only leaves the incomplete set by
-actually passing factory-verify (an external signal), so "incompleteCount: 0" requires real,
-verified completion of everything.
+derived from verified outcomes + staleness (PR #106). The worker partitions that set with
+`select_build_target` (src/agent_factory/build_target.py) so the forced loop targets ONLY the build
+set — `mvp` + `automated` requirements. This hook is a pure *local-file* check (it does not call
+Praxis itself — replicating the MCP's org/tenant auth from a hook is fragile), so the worker is
+responsible for re-querying + re-partitioning each pass and writing the honest result into the
+manifest. The values can't be faked at the requirement level: a requirement only leaves the
+incomplete set by actually passing factory-verify (an external signal), so "incompleteCount: 0"
+requires real, verified completion of the whole build set.
+
+`incompleteCount`/`incomplete` are scoped to the build target (mvp+automated) — NOT all active
+requirements. `deferred_manual` (mvp, human-verified) and `excluded_post_mvp` requirements are
+recorded separately for transparency and never block the gate; `needs_triage` (mis-tagged) is
+surfaced so a human resolves the tag rather than the loop silently auto-building it.
 
 Stays inert otherwise: no manifest / status != "building" => allow stop. FAILS OPEN on any error.
 
@@ -21,8 +29,12 @@ Manifest schema (written/updated by factory-execute each pass) at <cwd>/.factory
   "status": "building",        // "building" -> armed; "done"/"paused" -> allow stop
   "project": "prd-team-app",
   "checkedAt": "<pass marker>",        // bump every time you re-query (freshness)
-  "incompleteCount": 5,                // from praxis_incomplete_requirements(project)
-  "incomplete": [{"id": "R7", "reason": "never-built"}, ...],
+  "incompleteCount": 5,                // count over the BUILD TARGET ONLY (mvp+automated still incomplete)
+  "incomplete": [{"id": "R7", "reason": "never-built"}, ...],   // the build-target incompletes
+  // --- transparency only; recorded but NEVER counted toward incompleteCount / the block ---
+  "deferredManual": [{"id": "R20"}, ...],      // mvp + manual-verify: parked, surfaced to the human
+  "excludedPostMvp": [{"id": "R47"}, ...],     // post-mvp: out of scope for this build
+  "needsTriage": [{"id": "R31"}, ...],         // mis-tagged (unknown tier/verify): must NOT be silently built
   "attempts": 0, "maxAttempts": 200    // generous backstop so a truly-stuck build can't trap forever
 }
 """
@@ -70,6 +82,21 @@ def main() -> None:
     count = man.get("incompleteCount")
     incomplete = man.get("incomplete") or []
 
+    # Transparency-only groups: surfaced in advisories, never counted toward the block.
+    deferred_manual = man.get("deferredManual") or []
+    excluded_post_mvp = man.get("excludedPostMvp") or []
+    needs_triage = man.get("needsTriage") or []
+
+    def _transparency_note() -> str:
+        bits = []
+        if deferred_manual:
+            bits.append(f"{len(deferred_manual)} deferred-manual (parked for the human)")
+        if excluded_post_mvp:
+            bits.append(f"{len(excluded_post_mvp)} excluded post-MVP")
+        if needs_triage:
+            bits.append(f"{len(needs_triage)} NEEDS-TRIAGE (mis-tagged — resolve before relying on this build)")
+        return "" if not bits else "\nOut of build target: " + "; ".join(bits) + "."
+
     # Missing/odd count => force a re-query rather than letting it slide.
     if not isinstance(count, int):
         attempts = int(man.get("attempts", 0)) + 1
@@ -90,8 +117,9 @@ def main() -> None:
                 json.dump(man, fh, indent=2)
         except Exception:
             pass
-        _allow(f"build-completeness gate: PASSED — incomplete_requirements({project}) is empty. "
-               f"Every requirement is verified-complete; the build is done.")
+        _allow(f"build-completeness gate: PASSED — the build target (mvp+automated) for {project} "
+               f"is empty. Every targeted requirement is verified-complete; the build is done."
+               + _transparency_note())
 
     attempts = int(man.get("attempts", 0)) + 1
     max_attempts = int(man.get("maxAttempts", 200))

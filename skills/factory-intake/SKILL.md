@@ -66,7 +66,8 @@ diffable staging artifact — not the source of truth; the hardened snapshot is)
   "surfaces": ["s-today"],
   "defines": ["completion"],
   "references": ["daily rep", "ratings", "habit checklist"],
-  "scope": "mvp"
+  "scope": "mvp",
+  "project": "team-app"
 }
 ```
 
@@ -82,7 +83,14 @@ Field rules:
 - **`surfaces`** — wireframe screen ids this requirement governs, or `["backend-only"]`. This is
   the seed of the surface<->requirement binding (Step 3).
 - **`defines` / `references`** — concepts, for factory-plan's H14 dangling-reference gate.
-- **`scope`** — `"mvp"` or `"post-mvp"` (the badged wireframe items).
+- **`scope`** — `"mvp"` or `"post-mvp"` (the badged wireframe items). This is the **tier** tag only
+  (`meta.scope`, read by `build_target.py`); it is NOT the project identity. Do not put the project
+  name here.
+- **`project`** — the project this candidate belongs to (e.g. `"team-app"`). This is the project
+  identity: on handoff each candidate is admitted with **`source="prd-<project>"`** (here
+  `source="prd-team-app"`), which is what the completeness query and the done-gate's `R-HAS-SOURCE`
+  rule key off. Keep `project` distinct from `scope`; a candidate carrying only `scope` and no
+  `project`/`source` is the generation drift the gate now rejects.
 
 ## Step 2 — Review gate (mode-aware), then hand off to factory-plan
 
@@ -112,9 +120,12 @@ split as the C4 automated|manual gate.)
 
 On approval (or unattended auto-continue), invoke **`factory-plan`** with the candidate inventory as
 its input. factory-plan runs unchanged:
-- Admit each record as a fact — `add_insight(..., on_conflict="surface", category="requirement",
-  meta={requirement_id, surfaces, scope, verify})` — `statement` as the content, `acceptance` as
-  the binary condition.
+- Admit each record as a fact — `add_insight(..., source="prd-<project>", on_conflict="surface",
+  category="requirement", meta={requirement_id, surfaces, scope, verify})` — `statement` as the
+  content, `acceptance` as the binary condition. **`source="prd-<project>"` (the candidate's
+  `project`) is mandatory — it is the project identity the completeness query and the done-gate's
+  `R-HAS-SOURCE` rule filter on, and is distinct from `meta.scope` (the mvp/post-mvp tier).** A
+  requirement admitted without `source` is rejected by the gate.
 - Adversarial / gap lenses; contradiction queue (incl. the prose↔wireframe clashes you preserved).
 - **H14, now bidirectional** (the completeness check intake exists to enable): once bindings are
   written (Step 3), **`praxis_surface_coverage(project, scope="mvp")`** is the graph-native gate —

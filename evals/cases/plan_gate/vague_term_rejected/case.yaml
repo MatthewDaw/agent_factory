@@ -9,6 +9,7 @@ input:
       acceptance: "the screen feels quick."
       defines: ["daily flow screen"]
       references: []
+      source: "prd-team-app"
   out_of_scope: []
 rule_ids: ["R-NO-VAGUE"]
 deterministic_checks:

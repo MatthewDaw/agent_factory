@@ -9,6 +9,7 @@ input:
       acceptance: ""
       defines: ["team dashboard"]
       references: []
+      source: "prd-team-app"
   out_of_scope: []
 rule_ids: ["R-ACCEPT-BINARY"]
 deterministic_checks:

@@ -33,6 +33,8 @@ def _dangling_reject_case(case_id: str, red_proof: dict | None) -> EvalCase:
                     "acceptance": "streak += 1 on any day with a completed submission.",
                     "defines": [],
                     "references": ["ghost concept"],
+                    # valid source so R-HAS-SOURCE passes; the only firing rule stays R-NO-DANGLING
+                    "source": "prd-team-app",
                 },
             ],
             "out_of_scope": [],
