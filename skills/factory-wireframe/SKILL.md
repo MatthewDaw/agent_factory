@@ -65,6 +65,28 @@ categories — most "you missed X" misses come from skipping one:
 
 Write the inventory down (a list/table). It is the contract Step 4 audits against.
 
+**Then emit the machine-checkable manifest** — this is what arms the coverage gate
+(the Stop hook that won't let you quit early). Write `<project>/.factory/wireframe-checklist.json`:
+
+```json
+{
+  "status": "open",
+  "attempts": 0,
+  "max_attempts": 8,
+  "outputs": ["wireframe-player.html", "wireframe-admin.html"],
+  "requirements": [
+    { "id": "A2", "desc": "invite generate / revoke / usage", "markers": ["invite", "revoke"], "in": "wireframe-admin.html" },
+    { "id": "F1-offline", "desc": "offline / queued-sync state", "markers": ["offline"], "in": "wireframe-player.html" }
+  ]
+}
+```
+
+Rules for good markers: pick one or a few **short, lowercase, distinctive substrings** that will
+appear in the HTML *only* when that requirement is actually built (a label, a screen title, a
+config field name). `markers` are matched case-insensitively; ALL must be present. Use `"in"` to
+pin a requirement to one output file (omit = match in any). Add a row for **every** inventory
+item, including each implied state and each post-MVP item. Once written, set `status:"open"`.
+
 ## Step 3 — Generate the wireframe(s)
 
 - **One file per app/persona.** A persona whose PRD context is mobile (athlete/player) gets a
@@ -89,6 +111,16 @@ This is the step whose absence caused the repeated "check the PRD again." Before
    with the reason — never silently drop it.
 4. Only after the audit passes do you report. The report leads with the coverage result, not a
    claim of completeness — show the mapping that proves it.
+
+**The coverage gate enforces this — it is not optional.** A Stop hook (`hooks/wireframe_gate.py`)
+reads `.factory/wireframe-checklist.json` every time you try to end your turn. While `status` is
+`open`, it greps each output file for every requirement's markers and checks that every `go('X')`
+target has a matching `id="s-X"` screen. If anything is missing it **blocks you from stopping** and
+returns the list of misses — you literally cannot declare done with an unmet checklist. When all
+markers are present and no link is dead, the gate flips `status` to `passed` and lets you finish.
+If an item is genuinely out of scope, set `"waived": true` with a `"reason"` on its entry (never
+silently delete it) — the gate then treats it as satisfied and your report must state the waiver.
+Do not hand-edit `status` to `passed`; let the gate decide.
 
 ## Step 5 — Handoff
 
