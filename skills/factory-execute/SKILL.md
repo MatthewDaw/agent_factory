@@ -77,6 +77,25 @@ To intentionally yield (hand back to the human, or a hard blocker you can't pass
 outcome-grounded, so the only honest way to reach 0 is to actually build and verify the whole build
 set.
 
+## 0c. Work-review (auto, the ship gate)
+
+Once the build-completeness gate flips the manifest to **`done`** (build **FINISHED** — the build
+set is empty), **auto-run `factory-review` in WORK mode** over the whole diff/codebase (not one
+requirement — the full change set this run produced). Same shape as the plan-side gate in
+`factory-audit` §6: the `review_gate` (`hooks/review_gate.py`, armed by `.factory/review-status.json`)
+**blocks 'shipped' from ending** until the work-review is either **done with no open findings** or
+**skipped-with-reason** — never silently. This is the cold-eyes pass on the generated code, the
+counterpart to the plan review.
+
+Mode-aware:
+- **Attended:** run the review as the panel and present its findings as **one batched review**;
+  resolve or consciously dismiss each before the gate clears.
+- **Unattended (owner asleep):** **auto-skip-if-small** — if the diff is below the review heuristic's
+  size/risk floor, skip with a recorded reason + `praxis_record_episode` and let the gate pass.
+  Otherwise **run** it and **defer** open findings as owned-decisions (episode each, drop them in the
+  ledger for morning review) rather than blocking — done-or-skipped clears the gate, every deferral
+  is explicit.
+
 ## 1. Per-task loop
 
 **a. Assemble hermetic context (declare it; don't free-query mid-task).** Up front, pull exactly:

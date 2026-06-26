@@ -26,7 +26,13 @@ Keep iterating until ALL of the following hold:
    while that query is non-empty.
 2. **The plan is hardened in Praxis.** Every PRD requirement is an atomic fact in the
    `prd-team-app` snapshot, each with a binary acceptance condition and zero unresolved
-   contradictions.
+   contradictions. **Finalization is gated by `factory-review`:** the plan is not "done" until a
+   PLAN-mode review over the finalized `prd-team-app` has **passed (no open findings) or been
+   skipped-with-reason**, and the build is not "done" (per item 1) until a WORK-mode review over the
+   whole diff has likewise passed or been skipped. The `review_gate` (`hooks/review_gate.py`)
+   enforces both, exactly as the build-completeness gate enforces item 1. Both reviews are
+   **skippable for small work** (an auto size/risk heuristic, plus an explicit override) — but
+   **never silently**: a skip always records a reason (`praxis_record_episode`).
 3. **The tooling is hardened.** Every Praxis/factory edge case found is captured as an eval
    AND fixed to GREEN (or, if a fix is genuinely too risky to make unattended, left RED with a
    documented workaround so the build still proceeds).
@@ -126,6 +132,14 @@ Each pass is one slice of forward progress. Run this checklist top to bottom:
    continuing.
 8. **Checkpoint.** Update the ledger (§7), commit the team-app slice (one focused commit),
    re-`save_snapshot("prd-team-app")` when the plan changed.
+8b. **Finalization reviews (the `factory-review` gate).** Finalization — not each slice — is gated
+   by `factory-review` (`hooks/review_gate.py`): when the **plan is finalized** (audit passed +
+   snapshot, factory-audit §6) auto-run a **PLAN-mode** review over `prd-team-app`; when the **build
+   is finished** (the completeness gate flips to `done`, factory-execute §0c) auto-run a **WORK-mode**
+   review over the whole diff. Neither "planning complete" nor "shipped" may end until its review has
+   **passed (no open findings) or been skipped-with-reason**. Both are skippable for small work via
+   the auto size/risk heuristic + override, but **never silently** — a skip records a reason
+   (`record_episode`); unattended, open findings are deferred as owned-decisions, not blocked on.
 9. **Loop.** Go to step 2. Keep going until §1 is satisfied.
 
 ---

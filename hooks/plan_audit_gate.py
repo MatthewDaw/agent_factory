@@ -104,6 +104,23 @@ def _plan_gate_misses(man):
     return [f"plan_gate: {rsn.message}" for rsn in verdict.reasons], True
 
 
+def _arm_review(cwd, phase, project):
+    """Arm the factory-review gate for `phase` (so finalization can't skip the holistic
+    review). Idempotent: leaves an existing manifest for the same phase untouched."""
+    path = os.path.join(cwd, ".factory", "review-status.json")
+    try:
+        if os.path.isfile(path):
+            with open(path, "r", encoding="utf-8") as fh:
+                if json.load(fh).get("phase") == phase:
+                    return
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump({"phase": phase, "project": project, "status": "pending",
+                       "panelRan": False, "findings": [], "size": {},
+                       "attempts": 0, "maxAttempts": 30}, fh, indent=2)
+    except Exception:
+        pass
+
+
 def main() -> None:
     try:
         raw = sys.stdin.read()
@@ -197,8 +214,12 @@ def main() -> None:
                 json.dump(man, fh, indent=2)
         except Exception:
             pass
+        # Finalization is next (save_snapshot) — arm the holistic plan-review gate so it
+        # can't be skipped. The review gate then blocks until the panel ran + findings cleared.
+        _arm_review(cwd, "plan", man.get("project", "<project>"))
         _allow("factory-audit gate: PASSED — plan_gate clean, no open contradictions, every "
-               "requirement adversarially challenged and resolved. Safe to save_snapshot.")
+               "requirement adversarially challenged and resolved. Now run the plan-review "
+               "(factory-review) the review_gate just armed, then save_snapshot.")
 
     attempts = int(man.get("attempts", 0)) + 1
     max_attempts = int(man.get("max_attempts", 8))

@@ -57,6 +57,23 @@ def _block(reason: str) -> None:
     sys.exit(0)
 
 
+def _arm_review(cwd, phase, project):
+    """Arm the factory-review gate for `phase` (so finalization can't skip the holistic
+    review). Idempotent: leaves an existing manifest for the same phase untouched."""
+    path = os.path.join(cwd, ".factory", "review-status.json")
+    try:
+        if os.path.isfile(path):
+            with open(path, "r", encoding="utf-8") as fh:
+                if json.load(fh).get("phase") == phase:
+                    return
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump({"phase": phase, "project": project, "status": "pending",
+                       "panelRan": False, "findings": [], "size": {},
+                       "attempts": 0, "maxAttempts": 30}, fh, indent=2)
+    except Exception:
+        pass
+
+
 def main() -> None:
     try:
         raw = sys.stdin.read()
@@ -117,8 +134,11 @@ def main() -> None:
                 json.dump(man, fh, indent=2)
         except Exception:
             pass
+        # Build finished — arm the holistic work-review gate before "shipped".
+        _arm_review(cwd, "work", project)
         _allow(f"build-completeness gate: PASSED — the build target (mvp+automated) for {project} "
-               f"is empty. Every targeted requirement is verified-complete; the build is done."
+               f"is empty. Every targeted requirement is verified-complete. Now run the "
+               f"work-review (factory-review) the review_gate just armed before shipping."
                + _transparency_note())
 
     attempts = int(man.get("attempts", 0)) + 1

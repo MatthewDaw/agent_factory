@@ -149,6 +149,26 @@ end. Do not hand-edit `status` to `passed` — let the gate decide.
   `praxis_record_episode` each, drop the audit artifact + the open list in the ledger for morning
   review, and proceed only on what cleared.
 
+## Step 6 — Plan-review (auto, the finalization gate)
+
+Once the plan is **FINALIZED** (the audit gate above passed AND `save_snapshot("prd-<project>")`
+landed), **auto-run `factory-review` in PLAN mode** over the finalized `prd-<project>` — the whole
+admitted requirement set + `techDecisions`. This is the review-leverage rule's payoff: the highest-
+value cold-eyes pass sits on the plan, where one bad requirement is cheapest to catch. The
+`review_gate` (`hooks/review_gate.py`, armed by `.factory/review-status.json`) then **blocks
+'planning complete' from ending** until the review is either **done with no open findings** or
+**skipped-with-reason** — never silently.
+
+Mode-aware, like the rest of this skill:
+- **Attended:** run the review as the panel and present its findings as **one batched review**
+  (folded into / following Step 5's human moment, not a second round of interruptions). Resolve or
+  consciously dismiss each finding before the gate clears.
+- **Unattended (owner asleep):** **auto-skip-if-small** — if the plan is below the review heuristic's
+  size/risk floor, skip with a recorded reason + `praxis_record_episode` and let the gate pass.
+  Otherwise **run** it, and **defer** any open findings as owned-decisions (episode each, drop them
+  in the ledger for morning review) rather than blocking — the gate clears on done-or-skipped, but
+  every deferral is explicit.
+
 ## Never
 - Never `save_snapshot` (bless the plan) with the audit `status:"open"` or any open challenge.
 - Never let the agent that drafted a requirement be its *only* skeptic — use the cold-eyes sub-agent.
