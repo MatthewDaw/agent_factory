@@ -120,12 +120,17 @@ split as the C4 automated|manual gate.)
 
 On approval (or unattended auto-continue), invoke **`factory-plan`** with the candidate inventory as
 its input. factory-plan runs unchanged:
-- Admit each record as a fact — `add_insight(..., source="prd-<project>", on_conflict="surface",
-  category="requirement", meta={requirement_id, surfaces, scope, verify})` — `statement` as the
-  content, `acceptance` as the binary condition. **`source="prd-<project>"` (the candidate's
-  `project`) is mandatory — it is the project identity the completeness query and the done-gate's
-  `R-HAS-SOURCE` rule filter on, and is distinct from `meta.scope` (the mvp/post-mvp tier).** A
-  requirement admitted without `source` is rejected by the gate.
+- Admit each record as a fact with `source="prd-<project>"`, `category="requirement"`, and
+  `meta={requirement_id, surfaces, scope, verify}` — `statement` as the content, `acceptance` as the
+  binary condition. **A whole fresh intake is a *bulk* admission** — hand it to factory-plan's **raw
+  fast-lane** (`praxis_add_insights(insights=[...], raw=True)`, factory-plan Step 1 item 4), which
+  skips Praxis dedup + the per-item conflict check (that times out on large batches and wrongly
+  collapses near-duplicate requirements). **Intake's Step-1 Reconcile IS the dedup for this path** —
+  raw trusts that you already merged duplicates by concept here — and the audit's cold-eyes pass is
+  the contradiction net. (Incremental single-requirement edits later use `add_insight(...,
+  on_conflict="surface")`.) **`source="prd-<project>"` (the candidate's `project`) is mandatory** —
+  the project identity the completeness query and the `R-HAS-SOURCE` gate filter on, distinct from
+  `meta.scope` (the mvp/post-mvp tier); a requirement admitted without `source` is rejected.
 - Adversarial / gap lenses; contradiction queue (incl. the prose↔wireframe clashes you preserved).
 - **H14, now bidirectional** (the completeness check intake exists to enable): once bindings are
   written (Step 3), **`praxis_surface_coverage(project, scope="mvp")`** is the graph-native gate —

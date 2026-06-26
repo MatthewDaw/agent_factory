@@ -53,11 +53,26 @@ Then run the tenancy lifecycle through `factory-memory`:
 3. **Mount read-only** the reference snapshots: `general-pool` (general conventions),
    `constitution` (invariants, if it exists), and any relevant prior `prd-<project>` or research
    snapshot. Mounted facts inform retrieval but never enter the PRD snapshot.
-4. Write each settled requirement with **`add_insight(..., on_conflict="surface")`** (tabular
-   content via the linearizer first), stamping **`source="prd-<project>"` as the project identity**,
-   `category="requirement"`, and `meta={"requirement_id": "<R-id>"}` so it's citable and the
-   R-id↔fact mapping survives in Praxis (read back via `praxis_get_fact`). Surface mode is mandatory
-   during planning.
+4. **Admit each settled requirement** stamping **`source="prd-<project>"` as the project identity**,
+   `category="requirement"`, and `meta={"requirement_id": "<R-id>"}` (tabular content via the
+   linearizer first) so it's citable and the R-id↔fact mapping survives (read back via
+   `praxis_get_fact`). **Pick the write path by batch size:**
+
+   - **Incremental — minor edits, a single requirement add/change (the default for small work):**
+     `praxis_add_insight(..., on_conflict="surface")`. This keeps **live contradiction surfacing**
+     (the per-item conflict/claim check) — the safety net the hardening loop (Step 2d) relies on.
+     Surface mode is mandatory here.
+   - **Bulk raw fast-lane — a fresh whole-plan admission or a large refactor (≳20 requirements, or
+     any batch that times out on the per-item path):** `praxis_add_insights(insights=[...],
+     raw=True)` in ONE round-trip. `raw=True` still embeds each fact (retrievable) and still redacts
+     secrets, but **skips dedup AND the per-item LLM conflict/claim check** — so `on_conflict` is
+     ignored and *nothing is surfaced for review*. This is what avoids the timeout the normal path
+     hits on large batches (e.g. 71 items) and the dedup that wrongly collapses near-duplicate
+     requirements. **You own clean, non-conflicting data on this path** — which is why it is only
+     safe HERE: after intake has reconciled/deduped the candidates (factory-intake Step 1), with the
+     **audit's cold-eyes conflict pass as the contradiction net** (Step 2d note). Still stamp
+     `source`/`category`/`meta` per insight; each result returns `ok`/`id`/`action`/`retrievable` and
+     a bad item errors without aborting the rest — check them.
 
    **`source="prd-<project>"` is the project identity — it is NOT `meta.scope`.** `source` binds the
    requirement to its PRD (`prd-team-app`, `prd-foo`, …) and is what the downstream completeness
@@ -162,6 +177,14 @@ invariant, dependency/spec-registry fact, or research-evidence fact surfaces as 
 pending pair — inspect provenance/`source` on each side to tell which is the invariant vs. the new
 requirement. (Belt-and-suspenders: also glance at `praxis_list_graph(state="rejected")` in case a
 write slipped through on `auto_resolve` — but with surface mode the pending queue is the surface.)
+
+**Raw bulk caveat.** If the plan was admitted via the `raw=True` fast lane (Step 1 item 4), Praxis
+ran **no** conflict detection, so `praxis_get_contradictions` is empty *by construction* — that
+emptiness is NOT evidence of consistency. For a raw-admitted set the contradiction net is (1)
+intake's reconcile/dedup (kills duplicates *before* the write) and (2) **factory-audit's cold-eyes
+cross-requirement conflict challenges** (genuine clashes, plus clashes with mounted
+`constitution`/`prd-*` invariants). Treat the audit — not the empty queue — as the contradiction gate
+for bulk inserts. (Incremental edits still surface live via move d above.)
 
 **e. A human correction is a fact, not an override.** When the human corrects a *factual* claim
 (not merely states a preference), admit the correction the same way as any requirement —

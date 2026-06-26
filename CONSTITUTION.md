@@ -103,6 +103,12 @@ Each pass is one slice of forward progress. Run this checklist top to bottom:
    code just one — so spend the rigor here, on the facts, not on re-reading generated code:*
    - Admit each requirement via `praxis_add_insight(..., source="prd-team-app",
      category="requirement", meta={"requirement_id": "R<n>"}, on_conflict="surface")`.
+     For the **initial whole-plan admission or a large refactor** (≳20 reqs, or when the per-item
+     path times out at scale), admit in ONE round-trip with `praxis_add_insights(insights=[...],
+     raw=True)` — fast, but it skips dedup + conflict detection, so the candidates must already be
+     reconciled (intake) and the audit's cold-eyes conflict pass is the contradiction net (raw
+     assumes clean, non-conflicting facts). Keep the per-item `on_conflict="surface"` form for
+     incremental edits / tickets, where live contradiction surfacing still matters.
      **`source="prd-<project>"` (here `prd-team-app`) is the project identity** — it is what
      `praxis_incomplete_requirements(prd-team-app)` (§1) and the done-gate's `R-HAS-SOURCE` rule
      filter on, and is distinct from `meta.scope` (the mvp/post-mvp tier read by `build_target.py`).

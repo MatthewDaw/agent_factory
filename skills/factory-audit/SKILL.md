@@ -102,7 +102,10 @@ Write `<project>/.factory/plan-audit.json` — this is what the **Stop-hook gate
 from ending** (so you can't `save_snapshot` and call it hardened) until ALL hold:
 - `plan_gate` passes — **the hook re-runs `agent_factory.plan_gate.evaluate_plan` itself**, so the
   acceptance/vague/dangling checks can't be self-graded;
-- `contradictionsEmpty: true` — you ran `praxis_get_contradictions` and resolved every pending pair;
+- `contradictionsEmpty: true` — you ran `praxis_get_contradictions` and resolved every pending pair
+  (NOTE: if the plan was admitted via the `raw=True` bulk fast-lane, that queue is empty *by
+  construction* — detection was skipped — so it is THIS audit's cold-eyes conflict challenges, not the
+  empty queue, that are the real contradiction net; say `raw` was used in the artifact);
 - every requirement has ≥1 challenge and **no open challenge** (all resolved/dismissed/deferred with
   a recorded resolution);
 - rigorous mode: every gap-lens logged for every requirement;
