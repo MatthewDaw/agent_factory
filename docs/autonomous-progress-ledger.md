@@ -8,13 +8,19 @@ Update at the end of every pass. Newest entries at the bottom of each section.
 
 ## NEXT (the resume pointer)
 
-1. **Build R13 (notifications)** — per athlete per team-day, at most one daily reminder + at most
-   one streak-save reminder fire, and no reminder names or implies a specific non-completing
-   athlete (PRD §7). Add `team_app/notifications.py` (a scheduler that, given a team-day's state,
-   returns the ≤2 reminders to send, each with safe non-shaming copy) + tests.
-2. Then **auth + roles wiring** (PRD §1) and a **thin runnable local entry point** (e.g. a single
-   `team_app/app.py` that assembles a team-day view from the stores) so the app "runs locally."
-3. Continue passes until DoD (CONSTITUTION §1). Build order: CONSTITUTION §6.
+1. **Build the thin runnable local entry point + auth/roles wiring** (PRD §1; the last build
+   slice). Add `team_app/app.py`: a `TeamApp` (or `assemble_one_screen(...)`) that wires the
+   stores (submissions, content, messages, streak history) into the R6/R7 role-gated
+   "one-screen daily flow" — header (R11 theme), prompt (R12), team consistency snapshot
+   (participation R2 + streak R4), and visible messages (R9) — for a given (role, user, team,
+   team-day). Enforce role permissions at the assembly boundary (athlete/captain vs coach).
+   Add a `__main__`/demo path so `python -m team_app.app` runs locally and prints a sample
+   one-screen view. Tests for the assembled view + role gating.
+2. **Then run the DoD §1 audit** (CONSTITUTION §1): confirm every PRD requirement is built +
+   green with a runnable entry point; the `prd-team-app` snapshot is hardened (every requirement
+   an atomic fact, binary acceptance, zero unresolved contradictions); all coding_factory evals
+   GREEN; learnings compounded. Write the final handoff in the ledger when all four hold.
+3. Build order: CONSTITUTION §6.
 
 **Graph is clean as of the last pass** (R5/R8 repaired, R14 strays removed, snapshot re-saved at
 15 nodes). R10 (leaderboard) correctly stays `rejected`. R14 (data model) is intentionally NOT a
@@ -41,13 +47,13 @@ standalone Praxis requirement — realized in code (episode `df98fd8b`).
 | R9  | Captain message + approval | `team_app/messages.py` | ✅ built, green |
 | R11 | Weekly theme | `team_app/content.py` | ✅ built, green |
 | R12 | Daily prompt | `team_app/content.py` | ✅ built, green |
-| R13 | Notifications | — | ⛔ next |
+| R13 | Notifications | `team_app/notifications.py` | ✅ built, green |
 | R14 | Data model wiring | — | ⛔ todo |
 | —   | Auth + roles | — | ⛔ todo (PRD §1) |
 | —   | Local runnable entry point | — | ⛔ todo |
 
-Test suite: **55 passing** (completion 4 + participation 4 + roster 6 + streak 6 + day_boundary 6
-+ submissions 7 + views/roles 5 + messages 8 + content 9) as of last build.
+Test suite: **62 passing** (completion 4 + participation 4 + roster 6 + streak 6 + day_boundary 6
++ submissions 7 + views/roles 5 + messages 8 + content 9 + notifications 7) as of last build.
 
 ## Plan status (Praxis `agent-factory` org / `prd-team-app` snapshot)
 
@@ -117,6 +123,11 @@ reverted (§12). Tax domain — leave alone per owner constraint.
 
 ## Pass history
 
+- **2026-06-26 Pass 8:** §1b gate: praxis HEAD unchanged (`5370659`) → tooling green, skipped.
+  Built **R13 notifications** (`team_app/notifications.py`: ≤1 daily + ≤1 streak-save per
+  athlete/day, idempotent, non-shaming copy enforced by a marker-blocklist test; 7 tests). Suite
+  62 green. Episode `be9a2cb2` + `record_outcome(R13)`. Commit `9e79c8d`. No bug. **All behavioral
+  reqs R1–R13 now built.** Next: the runnable entry point + DoD audit.
 - **2026-06-26 Pass 7:** §1b gate: praxis HEAD unchanged (`5370659`) → tooling green, skipped.
   Built **R11 weekly theme + R12 daily prompt** (`team_app/content.py`: WeeklyThemeStore +
   DailyPromptStore, one-per-key upsert, response_type validation; 9 tests). Suite 55 green.
