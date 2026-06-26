@@ -6,21 +6,30 @@ Update at the end of every pass. Newest entries at the bottom of each section.
 
 ---
 
-## NEXT (the resume pointer)
+## ✅ DEFINITION OF DONE MET (2026-06-26, Pass 12)
 
-**Core build COMPLETE** (R1–R14 + runnable one-screen entry point, 67 green, plan hardened @23
-nodes / 0 contradictions, all 4 evals GREEN). Remaining in-scope logic slices, then a scoped DoD
-audit (scope boundary = episode `82608710`):
+All four CONSTITUTION §1 conditions hold (scoped per episode `82608710`):
 
-1. **§6 Admin mutations** — roster active/inactive toggle + captain assignment (role mutation),
-   building on `roster.py`/`roles.py`. Add a small `team_app/admin.py` + tests. (Coach-only,
-   deny-by-default — mirror the R6/R7 permission gating.)
-2. **Scoped DoD audit** — declare auth/login, DB, web/mobile UI, offline sync, deploy
-   out-of-local-scope (infra) with the episode-`82608710` rationale; confirm all in-scope logic
-   built+green, plan hardened, evals GREEN, learnings compounded; write the final handoff.
+1. **Product built + working locally** — every in-scope PRD requirement implemented in `team-app`
+   (R1–R14, §8 metrics, §2C habits, §6 admin) with a runnable entry point (`python -m team_app.app`)
+   and **84/84 tests green**. Out-of-local-scope (infra/UI, documented): auth/login, DB
+   persistence, web/mobile UI, offline sync, deployment.
+2. **Plan hardened** — 15 requirement atomic facts in `prd-team-app` (@30 nodes incl. episodes),
+   each with a binary acceptance condition, **zero unresolved contradictions**.
+3. **Tooling hardened** — all 4 `coding_factory` evals **GREEN** (re-verified) + **48/48**
+   write-policy unit tests; live `:8000` on fixed code.
+4. **Learnings compounded** — per-requirement `record_outcome` + impl/decision episodes; 4
+   captured→fixed→verified-green evals prove the Praxis write-path.
 
-**Graph clean** (zero contradictions). `prd-team-app` snapshot @23 nodes. R10 stays `rejected`;
-R14 realized in code (episode `df98fd8b`). Praxis HEAD recorded for §1b gate: `5370659`.
+**Loop status:** the build objective is complete. The 15-min cron (`797c0c14`) may keep firing;
+each fire will run the §1b gate (re-verify if praxis HEAD ≠ `5370659`) and find no remaining
+in-scope build slice — i.e. it idles cleanly. **To stop the loop, run `CronDelete 797c0c14`** (or
+end the session). Optional future work, only if desired: wire the §6 admin/roster store into the
+entry point demo; add an integration test spanning roster→submissions→participation→streak end
+to end; or pull any of the out-of-scope infra items into scope.
+
+`prd-team-app` snapshot @30 nodes; R10 stays `rejected`; R14 realized in code (`df98fd8b`).
+Praxis HEAD recorded for §1b gate: `5370659`.
 
 ---
 
@@ -49,10 +58,10 @@ R14 realized in code (episode `df98fd8b`). Praxis HEAD recorded for §1b gate: `
 | —   | Local runnable entry point | `team_app/app.py` | ✅ built, green (`python -m team_app.app`) |
 | §8  | Metrics (activation/retention/adherence/distribution/drop-off) | `team_app/metrics.py` | ✅ built, green |
 | §2C | Team habit checklist store (TeamHabits) | `team_app/habits.py` | ✅ built, green |
-| §6  | Admin mutations (roster active/inactive, captain assignment) | — | ⛔ next (testable logic) |
+| §6  | Admin mutations (roster active/inactive, captain assignment) | `team_app/admin.py` | ✅ built, green |
 | —   | Auth/login, DB persistence, web/mobile UI, offline sync, deploy | — | 🚫 out-of-local-scope (infra; CONSTITUTION §6) |
 
-Test suite: **78 passing** (… + notifications 7 + app 5 + metrics 5 + habits 6) as of last build.
+Test suite: **84 passing** (… + app 5 + metrics 5 + habits 6 + admin 6) as of last build.
 
 ## Plan status (Praxis `agent-factory` org / `prd-team-app` snapshot)
 
@@ -122,6 +131,12 @@ reverted (§12). Tax domain — leave alone per owner constraint.
 
 ## Pass history
 
+- **2026-06-26 Pass 12 (DoD MET):** §1b gate clean. Built **§6 admin mutations**
+  (`team_app/admin.py`: RosterStore + coach-only set_active/assign_captain, deny-by-default;
+  flows to active_roster→participation; 6 tests). Suite **84 green**. Admitted R-ADMIN (`d5e10a39`,
+  added clean) + episode `cf36de4f` + `record_outcome`. Commit `e78cd0c`. Then ran the **scoped DoD
+  audit**: all 4 evals re-verified GREEN, 48/48 write-policy tests, 0 contradictions, snapshot
+  re-saved @30 nodes → **Definition of Done MET**. No bug. Loop objective complete.
 - **2026-06-26 Pass 11:** §1b gate clean. Built **§2C team habit checklist** (`team_app/habits.py`:
   TeamHabitsStore one active 3-6 unique-item list per team + checked_items; recorded, never gates
   completion per R1 — confirmed by test; 6 tests). Suite 78 green. Admitted R-HABITS (`c2efa4f6`,
