@@ -8,20 +8,20 @@ Update at the end of every pass. Newest entries at the bottom of each section.
 
 ## NEXT (the resume pointer)
 
-1. **Clean up polluted live graph** (from this session's probing) before building further:
-   - R5 (`45d9c110…`) was polluted by the `team_day` tabular merge — `edit_fact` it back to the
-     clean "Team day boundary (R5): … attributed to team-day D when T >= 03:00, otherwise to
-     team-day D-1." (title + content both required).
-   - R14 table left stray field-facts (`user_id`/`completion_status`/`ratings_json`) and a
-     merged `team_day`. Decide: keep them as data-model facts (fine) or reject the partial set
-     and re-admit R14 cleanly as one atomic fact. Best-choice default: reject the 3 stray field
-     facts + re-admit R14 as a single semicolon-joined data-model requirement.
-   - R10 (leaderboard) correctly stays `rejected` (lost to R6 privacy). Leave it.
-   - Re-`save_snapshot("prd-team-app")` after cleanup.
-2. **Build R4 (team streak)** in `team-app` — next buildable pure-logic slice (threshold 70%,
-   resets on a sub-70% day, N=0 day no-ops). Then **R5 (team-day boundary)**, then **R8
-   (idempotency)**. Follow build order in CONSTITUTION §6.
-3. Continue passes until DoD (CONSTITUTION §1).
+1. **Build R5 (team-day boundary)** in `team-app` — pure-logic slice: a submission at local
+   time T on date D maps to team-day D when T >= 03:00, else D-1. Add `team_app/day_boundary.py`
+   + tests.
+2. Then **R8 (submission idempotency)** — one submission row per (user_id, team_day); re-submit
+   updates, never inserts a second / double-counts. Likely needs a small submission store
+   (in-memory dict keyed by (user_id, team_day)); add `team_app/submissions.py` + tests.
+3. Then the role/permission + visibility slices (R6 athlete-aggregate-only, R7 coach-per-athlete),
+   captain message (R9), weekly theme (R11) / daily prompt (R12), notifications (R13), and a thin
+   runnable local entry point. Follow build order in CONSTITUTION §6.
+4. Continue passes until DoD (CONSTITUTION §1).
+
+**Graph is clean as of the last pass** (R5/R8 repaired, R14 strays removed, snapshot re-saved at
+15 nodes). R10 (leaderboard) correctly stays `rejected`. R14 (data model) is intentionally NOT a
+standalone Praxis requirement — realized in code (episode `df98fd8b`).
 
 ---
 
@@ -36,8 +36,8 @@ Update at the end of every pass. Newest entries at the bottom of each section.
 | R1  | Daily completion | `team_app/completion.py` | ✅ built, green |
 | R2  | Participation %  | `team_app/participation.py` | ✅ built, green |
 | R3  | Active roster    | `team_app/roster.py` | ✅ built, green |
-| R4  | Team streak (≥70%) | — | ⛔ next |
-| R5  | Team-day boundary (3AM) | — | ⛔ todo |
+| R4  | Team streak (≥70%) | `team_app/streak.py` | ✅ built, green |
+| R5  | Team-day boundary (3AM) | — | ⛔ next |
 | R6  | Athlete visibility (aggregate only) | — | ⛔ todo |
 | R7  | Coach visibility (per-athlete) | — | ⛔ todo |
 | R8  | Submission idempotency | — | ⛔ todo |
@@ -49,7 +49,7 @@ Update at the end of every pass. Newest entries at the bottom of each section.
 | —   | Auth + roles | — | ⛔ todo (PRD §1) |
 | —   | Local runnable entry point | — | ⛔ todo |
 
-Test suite: 14 passing (completion 4 + participation 4 + roster 6) as of last build.
+Test suite: **20 passing** (completion 4 + participation 4 + roster 6 + streak 6) as of last build.
 
 ## Plan status (Praxis `agent-factory` org / `prd-team-app` snapshot)
 
@@ -112,6 +112,13 @@ rather than writing a duplicate fix.
 
 ## Pass history
 
+- **2026-06-26 Pass 1 (first loop pass):** Cleaned the polluted graph (repaired R5 + R8 via
+  `edit_fact`; rejected+deleted the 3 stray R14 field-facts; re-saved snapshot @15 nodes). R14
+  hit the known Augmenter merge into R8 → repaired R8, recorded decision to keep R14 in code
+  only (episode `df98fd8b`). Built **R4 team streak** (`team_app/streak.py`, 6 tests, suite 20
+  green); recorded impl episode `9b715f1e` + `record_outcome(R4, succeeded)`. Committed team-app
+  `458aa4d`. No new bug (the R14 merge is already covered by `tabular_field_not_merged_into_incumbent`).
+  Next: R5.
 - **2026-06-26 (session prior to loop):** Established constitution + ledger. Ran the planning
   loop over the team-app PRD; found and captured 3 new Praxis edge cases as RED evals
   (fragmentation, contradiction-merge, tabular-merge); verified recall/episodes/snapshot/
