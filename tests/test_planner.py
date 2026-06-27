@@ -7,13 +7,19 @@ trip with the coverage loader.
 
 from evals.plan_repro.coverage import load_candidate
 from evals.plan_repro.planner import (
-    DEFAULT_PLANNING_CHECKLIST,
     build_planner_prompt,
     load_prd,
     parse_candidate,
     produce_candidate,
     save_candidate,
 )
+
+# The real checklist lives in Praxis (loaded at runtime); tests use a local sample so they
+# exercise the injection without depending on Praxis or any baked-in list.
+SAMPLE_CHECKLIST = [
+    "Authentication completeness: include credential recovery (password reset).",
+    "Every screen needs loading, empty, and error states.",
+]
 
 
 # --- PRD loading ---------------------------------------------------------------
@@ -39,7 +45,7 @@ def test_planner_prompt_baseline_has_no_lenses():
 
 
 def test_planner_prompt_treatment_injects_checklist():
-    prompt = build_planner_prompt("PRD BODY", checklist=DEFAULT_PLANNING_CHECKLIST)
+    prompt = build_planner_prompt("PRD BODY", checklist=SAMPLE_CHECKLIST)
     assert "general engineering considerations" in prompt
     assert "credential recovery" in prompt  # a lens, not the golden feature itself
 
@@ -95,7 +101,7 @@ def test_produce_candidate_passes_checklist_through():
         seen["prompt"] = prompt
         return '[]'
 
-    produce_candidate(complete, "PRD", checklist=DEFAULT_PLANNING_CHECKLIST)
+    produce_candidate(complete, "PRD", checklist=SAMPLE_CHECKLIST)
     assert "credential recovery" in seen["prompt"]
 
 

@@ -1,0 +1,19 @@
+# Planning checklist the eval seeds into its OWN Praxis space at execution, then reads back
+# through the real Praxis retrieval path. These are GENERAL engineering lenses, NOT the golden
+# answer key: applying each to a specific PRD is what should surface the features a naive
+# planner misses (password reset, consent gate, empty/loading states, ...).
+#
+# This is the eval's controlled INPUT. It is exercised THROUGH Praxis (populate own space ->
+# read back -> apply), never injected straight into the planner — that is what makes the test
+# a real test of the Praxis-backed mechanism rather than a bypass.
+checks:
+  - "Authentication completeness: if the app has accounts, include credential recovery (password reset) and full session lifecycle (login, logout, current-user)."
+  - "Every user-facing screen needs its non-happy states: loading, empty/'nothing-yet', and error/fallback."
+  - "Apps touching minors or health-adjacent data need a consent/disclaimer gate and age capture/handling."
+  - "Any moderation or approval workflow needs an admin override and an audit trail."
+  - "Resolve live-vs-batch computation ambiguities explicitly (realtime vs nightly aggregation, late-sync handling)."
+  - "Push/notifications need device/token lifecycle (register, refresh, unsubscribe) and an in-app fallback when push is unavailable."
+  - "Define edit and idempotency semantics: can users edit after submit, and are write endpoints idempotent against retries/offline sync?"
+  - "Access control on every endpoint: authz checks, tenant/data scoping, and least-exposure for sensitive lists."
+  - "Offline/performance where the context implies it: local caching, offline action + later sync, and latency targets."
+  - "Admin/back-office tooling to manage the content the app depends on (no manual patching)."

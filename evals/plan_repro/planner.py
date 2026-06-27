@@ -4,19 +4,21 @@ See ``docs/coverage-spine/03-eval-agent.md`` / ``02-planner.md``. The plan-repro
 needs a *controllable* planner so it can measure the hole rate and A/B the planning checklist:
 
 - **baseline** (`checklist=None`): plan straight from the PRD prose.
-- **treatment** (`checklist=DEFAULT_PLANNING_CHECKLIST`): apply general engineering lenses.
+- **treatment** (`checklist=` the planning checklist loaded from Praxis): apply general lenses.
 
 The delta in `derived`-feature holes between the two is the meta-proof that the checklist
 closes holes. This is a deliberately controllable proxy for the production gated planner
 (`factory-intake`/`factory-plan`), not a replacement — it isolates one variable (the checklist).
 
-Like :mod:`llm_evaluator`, the model is injected as ``Complete = (prompt) -> text`` so this is
-testable without a network (inject a canned ``Complete``) and backend-agnostic.
+The checklist is NOT hard-coded here: it is loaded from the Praxis knowledge graph at
+execution time (see :mod:`evals.plan_repro.praxis_source`), so the eval relies on Praxis as the
+single source of truth — never a private copy of the checks. Like :mod:`llm_evaluator`, the
+model is injected as ``Complete = (prompt) -> text`` so this is testable without a network.
 
-IMPORTANT: the checklist is **general lenses** ("apps with auth need credential recovery"),
-NOT the golden feature list. It encodes reusable engineering knowledge; applying it to *this*
-PRD is what should surface the password-reset / consent / empty-state features. The golden is
-the answer key (for scoring only); the checklist must never be the answer key.
+IMPORTANT: the Praxis checklist is **general lenses** ("apps with auth need credential
+recovery"), NOT the golden feature list. It encodes reusable engineering knowledge; applying
+it to *this* PRD is what should surface the password-reset / consent / empty-state features.
+The golden is the answer key (for scoring only); the checklist must never be the answer key.
 """
 
 from __future__ import annotations
@@ -38,29 +40,9 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_PRD_DIR = _REPO_ROOT / "docs" / "inspiration"
 DEFAULT_GOLDEN = Path(__file__).resolve().parent / "team-app" / "golden-features.yaml"
 
-#: General engineering lenses (the treatment knob). NOT the golden — each is a reusable
-#: consideration whose *application to this PRD* should surface the features a naive planner
-#: misses. This list is the seed for the Praxis `planning` checklist (see 02-planner.md).
-DEFAULT_PLANNING_CHECKLIST = [
-    "Authentication completeness: if the app has accounts, include credential recovery "
-    "(password reset) and full session lifecycle (login, logout, current-user).",
-    "Every user-facing screen needs its non-happy states: loading, empty/'nothing-yet', "
-    "and error/fallback.",
-    "Apps touching minors or health-adjacent data need a consent/disclaimer gate and "
-    "age capture/handling.",
-    "Any moderation or approval workflow needs an admin override and an audit trail.",
-    "Resolve live-vs-batch computation ambiguities explicitly (realtime vs nightly "
-    "aggregation, late-sync handling).",
-    "Push/notifications need device/token lifecycle (register, refresh, unsubscribe) and an "
-    "in-app fallback when push is unavailable.",
-    "Define edit and idempotency semantics: can users edit after submit, and are write "
-    "endpoints idempotent against retries/offline sync?",
-    "Access control on every endpoint: authz checks, tenant/data scoping, and least-exposure "
-    "for sensitive lists.",
-    "Offline/performance where the context implies it: local caching, offline action + later "
-    "sync, and latency targets.",
-    "Admin/back-office tooling to manage the content the app depends on (no manual patching).",
-]
+# The planning checklist is NOT defined here — it lives in Praxis and is loaded at execution
+# time via evals.plan_repro.praxis_source.load_planning_checklist(). Keeping a copy in code
+# would defeat the point (the eval must rely on Praxis as the single source of truth).
 
 
 # --- PRD loading ---------------------------------------------------------------

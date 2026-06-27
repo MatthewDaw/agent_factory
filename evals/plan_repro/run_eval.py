@@ -36,10 +36,13 @@ def _main(argv: list[str] | None = None) -> int:  # pragma: no cover - exercises
     )
     from evals.plan_repro.planner import (
         DEFAULT_GOLDEN,
-        DEFAULT_PLANNING_CHECKLIST,
         load_prd,
         produce_candidate,
         save_candidate,
+    )
+    from evals.plan_repro.praxis_source import (
+        provision_and_load_checklist,
+        teardown_eval_space,
     )
 
     here = Path(__file__).resolve().parent
@@ -54,26 +57,39 @@ def _main(argv: list[str] | None = None) -> int:  # pragma: no cover - exercises
 
     judge = make_anthropic_complete(model=args.judge_model)
 
-    if args.candidate:
-        candidate = load_candidate(args.candidate)
-        print(f"scoring existing candidate: {args.candidate} ({len(candidate)} features)")
-    else:
-        planner = make_anthropic_complete(model=args.planner_model)
-        checklist = DEFAULT_PLANNING_CHECKLIST if args.checklist else None
-        candidate = produce_candidate(planner, load_prd(), checklist=checklist)
-        out = args.out or f"team-app/candidate-{'treatment' if args.checklist else 'baseline'}.yaml"
-        out_path = out if Path(out).is_absolute() else str(here / out)
-        save_candidate(candidate, out_path, project="team-app")
-        print(f"planned {len(candidate)} features "
-              f"({'with' if args.checklist else 'without'} checklist) -> {out_path}")
+    provisioned = False
+    try:
+        if args.candidate:
+            candidate = load_candidate(args.candidate)
+            print(f"scoring existing candidate: {args.candidate} ({len(candidate)} features)")
+        else:
+            planner = make_anthropic_complete(model=args.planner_model)
+            checklist = None
+            if args.checklist:
+                # Provision the eval's OWN Praxis space, seed the checklist into it, read it
+                # back — the eval relies on Praxis at runtime, not a copy in code.
+                checklist = provision_and_load_checklist()
+                provisioned = True
+                print(f"provisioned eval space + loaded {len(checklist)} planning check(s) "
+                      f"from Praxis")
+            candidate = produce_candidate(planner, load_prd(), checklist=checklist)
+            out = args.out or f"team-app/candidate-{'treatment' if args.checklist else 'baseline'}.yaml"
+            out_path = out if Path(out).is_absolute() else str(here / out)
+            save_candidate(candidate, out_path, project="team-app")
+            print(f"planned {len(candidate)} features "
+                  f"({'with' if args.checklist else 'without'} checklist) -> {out_path}")
 
-    golden = load_golden(args.golden)
-    report = run_coverage(
-        golden, candidate, lexical_related_query,
-        make_llm_evaluator(judge), refuter=make_llm_refuter(judge),
-    )
-    print(report.format())
-    return 0 if report.passed else 1
+        golden = load_golden(args.golden)
+        report = run_coverage(
+            golden, candidate, lexical_related_query,
+            make_llm_evaluator(judge), refuter=make_llm_refuter(judge),
+        )
+        print(report.format())
+        return 0 if report.passed else 1
+    finally:
+        if provisioned:
+            teardown_eval_space()
+            print("torn down eval space (cleared)")
 
 
 if __name__ == "__main__":  # pragma: no cover

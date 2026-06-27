@@ -58,12 +58,18 @@ hole-free as the hand-refined one.
 - `llm_evaluator.py` — LLM-backed `item_evaluator` + `refuter` (and a `tiered` fast-path) built
   from an injected `Complete = (prompt) -> text`; Anthropic backend via `make_anthropic_complete`.
   Tested in `tests/test_llm_evaluator.py`.
-- `planner.py` — the planner-under-test: PRD (+ optional `DEFAULT_PLANNING_CHECKLIST`) -> candidate
-  feature list, via an injected `Complete`. The checklist knob A/Bs baseline vs. treatment. A
-  controllable proxy for the production gated planner, not a replacement. Tested in
-  `tests/test_planner.py`.
-- `run_eval.py` — end-to-end CLI: plan from `docs/inspiration/` -> save candidate -> score vs the
-  golden with the LLM judge + refuter. Needs a model backend (Anthropic SDK + key).
+- `planner.py` — the planner-under-test: PRD (+ optional checklist) -> candidate feature list, via
+  an injected `Complete`. The checklist knob A/Bs baseline vs. treatment. A controllable proxy for
+  the production gated planner, not a replacement. Tested in `tests/test_planner.py`.
+- `praxis_source.py` — the eval's Praxis space lifecycle: create its OWN space -> clear -> seed the
+  checklist (from `planning-checklist.yaml`) -> read it back -> teardown, all at runtime through the
+  real Praxis HTTP API. The checklist is NOT hard-coded; it round-trips through Praxis. Tested in
+  `tests/test_praxis_source.py`.
+- `planning-checklist.yaml` — the seed artifact (general engineering lenses) the eval writes into its
+  own Praxis space. NOT the golden answer key.
+- `run_eval.py` — end-to-end CLI: provision the eval's Praxis space + load the checklist -> plan from
+  `docs/inspiration/` -> save candidate -> score vs the golden with the LLM judge + refuter -> tear
+  down the space. Needs a model backend (Anthropic SDK + key) and `PRAXIS_*` env.
 - `team-app/candidate-*.yaml` — recorded candidate plans (written by `run_eval.py`; re-scorable
   deterministically without re-planning).
 
