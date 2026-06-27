@@ -7,8 +7,19 @@ make the best low-regret choice, **record it as a Praxis episode** (with the alt
 did not take), and proceed. The owner will review recorded decisions in the morning and
 override anything they dislike — your job is forward progress, not perfect certainty.
 
-This file governs **process**, not product design. Read it, read the ledger
-(`docs/autonomous-progress-ledger.md`), then act.
+This file governs **process**, not product design. Read it, read
+**[METHODOLOGY.md](METHODOLOGY.md)** (the single canonical statement of how the factory works), read
+the ledger (`docs/autonomous-progress-ledger.md`), then act.
+
+**The method in one breath.** State lives in ONE place — **Praxis**. No JSON status files, no on-disk
+locks, no self-set "done" flags. Every unit of work is the same loop:
+**FIND** the next incomplete ticket in scope → **CLAIM** it (a heartbeated lease, not a lock) →
+**RESOLVE** which checks apply *by query* (the ticket never stores its own check list) → **BUILD** →
+**VERIFY** each pinned check, recording the pass on the ticket node → **FINISH** (release as finished)
+only when every pinned check passed. A **single** Stop-hook gate (`hooks/build_completeness_gate.py`)
+reads Praxis live and enforces this. Praxis is a **hard dependency**: if it is unreachable the gate
+**fails CLOSED and BLOCKS** — it never proceeds on a guess. The old multi-gate spine
+(preflight / wireframe / plan-audit / review) is gone: every one of those became a ticket or a check.
 
 ---
 
@@ -54,9 +65,10 @@ Keep iterating until ALL of the following hold:
    returning empty** — it derives completeness from verified outcomes + staleness, so "done" means
    every requirement actually passed `factory-verify`, not that the agent believes so. The
    build-completeness gate (`hooks/build_completeness_gate.py`) enforces it: the worker cannot stop
-   while that query is non-empty. **Coding only starts after the preflight gate clears** — the
-   environment's derived dependencies (credentials, API keys, services, tooling — from the
-   `techDecisions`) must be provisioned (`hooks/preflight_gate.py`, factory-execute §0). And the
+   while that query is non-empty. **The environment's derived dependencies** (credentials, API keys,
+   services, tooling — from the `techDecisions`) must be provisioned before coding; an unprovisioned
+   dependency is just a **failing check** on its ticket, which the same completeness gate refuses to
+   pass (factory-execute §0). And the
    plan is **not done until it is DEPLOYED and the deployment verified** — a hard gate the same
    build-completeness gate enforces — **unless the owner explicitly opted out** of deployment
    (`deployment.required:false` + a recorded reason). The build itself **fans out** (parallel
@@ -66,8 +78,9 @@ Keep iterating until ALL of the following hold:
    contradictions. **Finalization is gated by `factory-review`:** the plan is not "done" until a
    PLAN-mode review over the finalized `prd-team-app` has **passed (no open findings) or been
    skipped-with-reason**, and the build is not "done" (per item 1) until a WORK-mode review over the
-   whole diff has likewise passed or been skipped. The `review_gate` (`hooks/review_gate.py`)
-   enforces both, exactly as the build-completeness gate enforces item 1. Both reviews are
+   whole diff has likewise passed or been skipped. A review/audit finding becomes a Praxis
+   ticket/check, so the **build-completeness gate** enforces both exactly as it enforces item 1
+   (the only review residue in Praxis is a tiny "panel-ran" episode assertion). Both reviews are
    **skippable for small work** (an auto size/risk heuristic, plus an explicit override) — but
    **never silently**: a skip always records a reason (`praxis_record_episode`).
 3. **The tooling is hardened.** Every Praxis/factory edge case found is captured as an eval
@@ -134,7 +147,9 @@ Each pass is one slice of forward progress. Run this checklist top to bottom:
 2. **Pick the next slice.** The next *incomplete* requirement from
    `praxis_incomplete_requirements(prd-team-app)` (dependency order; then never-built → regressed →
    stale). §6's build order is a priority hint, not the source of truth — the completeness query is.
-   Keep the build-status manifest (factory-execute §0b) current so the gate sees real progress.
+   **Claim** the chosen ticket (`meta.build_state="in_progress"` + a heartbeated lease) so the gate
+   sees this session is actively building it, and heartbeat while you work. There is no status
+   manifest — progress is the ticket's live `build_state`/outcome in Praxis, nothing on disk.
 3. **Plan the slice** (factory-plan discipline). *Review leverage is inverse to distance from
    execution — a bad requirement spawns thousands of bad lines, a bad plan hundreds, a bad line of
    code just one — so spend the rigor here, on the facts, not on re-reading generated code:*
@@ -175,10 +190,11 @@ Each pass is one slice of forward progress. Run this checklist top to bottom:
    continuing.
 8. **Checkpoint.** Update the ledger (§7), commit the team-app slice (one focused commit),
    re-`save_snapshot("prd-team-app")` when the plan changed.
-8b. **Finalization reviews (the `factory-review` gate).** Finalization — not each slice — is gated
-   by `factory-review` (`hooks/review_gate.py`): when the **plan is finalized** (audit passed +
+8b. **Finalization reviews (`factory-review`).** Finalization — not each slice — is gated by
+   `factory-review`, whose findings land as Praxis tickets/checks the build-completeness gate
+   enforces: when the **plan is finalized** (audit passed +
    snapshot, factory-audit §6) auto-run a **PLAN-mode** review over `prd-team-app`; when the **build
-   is finished** (the completeness gate flips to `done`, factory-execute §0c) auto-run a **WORK-mode**
+   is finished** (the live completeness query over `prd-team-app` returns empty) auto-run a **WORK-mode**
    review over the whole diff. Neither "planning complete" nor "shipped" may end until its review has
    **passed (no open findings) or been skipped-with-reason**. Both are skippable for small work via
    the auto size/risk heuristic + override, but **never silently** — a skip records a reason

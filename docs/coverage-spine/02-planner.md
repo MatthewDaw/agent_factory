@@ -7,9 +7,13 @@ Move the planner's "what to look for" out of hard-coded Python + skill prose and
 Praxis `planning` snapshot, so the planning gate enforces **whatever checklist is in Praxis**
 with the rigor it already has — and a checklist item can be added with no code change.
 
-## What's hard-coded today (to de-hardcode)
-- `hooks/plan_audit_gate.py:57` — `GAP_LENSES = ("failure-modes","security","data-lifecycle","rollback","who-pays")`, a frozen tuple, iterated at `:247-252`. The *enforcement* is already generic ("every item closed with evidence"); only the **list** is concrete.
-- Note the code already believes in this direction: `techDecisions` and `testStrategy` are explicitly "DYNAMIC, no fixed list" (`plan_audit_gate.py:60-63`). The lenses just never got the same treatment.
+## What was hard-coded (now de-hardcoded)
+- The old planning-audit gate carried a frozen `GAP_LENSES` tuple
+  (`failure-modes`, `security`, `data-lifecycle`, `rollback`, `who-pays`). The *enforcement* was
+  already generic ("every item closed with evidence"); only the **list** was concrete. That whole
+  separate gate is now deleted — its lenses become declarative planning **checks** in Praxis, and the
+  single `hooks/build_completeness_gate.py` enforces them like every other ticket/check (no
+  per-phase `checklist_gate`; there is exactly one gate).
 
 ## What stays deterministic (do NOT move to Praxis)
 The mechanical, parseable rules in `src/agent_factory/plan_gate.py` — `R-ACCEPT-BINARY`,
@@ -20,14 +24,14 @@ not be subject to retrieval. They become the seed **deterministic** check kind.
 Skills keep their flow and the deterministic gates; only the **judgment checklist** lives in
 Praxis. Concretely:
 
-1. `factory-plan` / `factory-audit` **pull the applicable planning checklist** from the
-   `planning` snapshot (filter by `meta.scope="planning"` + applicability to the project).
-2. The skill **writes each applicable check into `.factory/plan-audit.json`** as an item that
-   must be addressed per requirement (replacing the hard-coded lens loop).
-3. `plan_audit_gate.py` is generalized: delete the `GAP_LENSES` constant + special-cased
-   loop; enforce **"every `check` entry in the manifest is closed-with-evidence"** generically
-   (it already does this for `challenges`; lenses/tech/test become just more check entries).
-   The hook gets **simpler**.
+1. `factory-plan` / `factory-audit` **resolve the applicable planning checklist by query** from the
+   `planning` snapshot (`meta.scope="planning"` + applicability to the project) — fresh, never a
+   pre-authored list on the requirement.
+2. The skill records each applicable check **as a Praxis check/ticket** (pinned as the requirement's
+   completion contract) that must be addressed (replacing the hard-coded lens loop).
+3. Enforcement is generic and singular: `hooks/build_completeness_gate.py` reads Praxis live and
+   blocks while any pinned planning check is open-without-evidence (lenses/tech/test are just more
+   check entries). There is no separate planning gate.
 
 ## Remediation (in the agent, on a hole)
 Already supported by `factory-audit`: for each unmet item — research / take a default + log an
@@ -48,7 +52,7 @@ The eval then **proves** the checklist is complete: a checklist-driven plan that
 the golden with zero holes means the checklist has no holes.
 
 ## First cut
-De-hardcode `GAP_LENSES` → a `planning`-snapshot checklist that `factory-audit` pulls and
-writes into the manifest; generalize `plan_audit_gate` to enforce closure over manifest check
-entries. Lower-risk than the validation side and the cleanest demonstration of the pattern.
+De-hardcode `GAP_LENSES` → a `planning`-snapshot checklist that `factory-audit` resolves by query and
+records as Praxis checks; the single `build_completeness_gate` enforces closure over them generically. Lower-risk
+than the validation side and the cleanest demonstration of the pattern.
 (The validation side is where the live bugs are — see the separate thread / `00-overview.md`.)

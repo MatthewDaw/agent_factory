@@ -8,6 +8,40 @@ description: >
   and clears the gate. Produces a `prd-<project>` snapshot; execution consumes it later.
 ---
 
+## How work flows (this factory's methodology — read first)
+
+State lives in ONE place: Praxis. There are no JSON status files, no locks on disk, no self-set "done"
+flags. A ticket (requirement) and a check are Praxis facts; everything about what is built/claimed/passed
+is state ON THE TICKET'S Praxis node. To do ANY unit of work you follow exactly this loop:
+
+1. FIND   — query Praxis for the next incomplete ticket in scope (incomplete = never-built | regressed |
+            stale, derived from recorded outcomes). Pass the BARE project name (e.g. "team-app"); the
+            endpoint adds the "prd-" prefix itself — passing "prd-team-app" returns EMPTY and silently
+            hides all work.
+2. CLAIM  — atomically set the ticket's meta.build_state="in_progress" with claim_owner=you + a heartbeat.
+            The claim is a LEASE: refresh the heartbeat while working; a stale lease auto-reclaims so a
+            dead agent never strands a ticket. Parallel agents never double-work because a live claim is
+            visible to all.
+3. RESOLVE— determine which checks this ticket must pass by QUERY (its tag ∪ its surfaces ∪ semantic
+            match against active checks). The ticket NEVER stores its own check list. Truncate any prior
+            per-check state, then PIN the freshly-resolved set onto the ticket as this pass's contract.
+4. BUILD  — do the work to satisfy the ticket's acceptance condition.
+5. VERIFY — run each pinned check; record each pass ON THE TICKET NODE (never on the check — checks are
+            read-only during builds). External signals only; never self-judge.
+6. FINISH — only when EVERY pinned check passed: record a succeeded outcome and release the lease
+            (build_state="finished"). If any check fails, record a failed outcome — that regresses the
+            ticket so it re-enters the FIND set and is re-done.
+
+Praxis is a HARD dependency: if it is unreachable the factory STOPS (the gate blocks) — it never proceeds
+on a guess. The single Stop gate (build_completeness) enforces this loop: it blocks the turn from ending
+while you hold an unfinished claim or scoped incomplete tickets remain.
+
+In this skill: you AUTHOR the FIND set. Plan-hardening admits each settled requirement as a
+`source="prd-<project>"` ticket and (via checks) the contract every ticket must later pass — so the loop
+above has tickets to find and checks to resolve. You write tickets and checks to Praxis only; you never
+write build/claim/pass state (that is the build loop's job) and you keep ZERO side files — the hardened
+plan IS the Praxis snapshot, and the audit re-arm leaves only a panel-ran episode, never a state machine.
+
 # Factory Plan (plan-hardening)
 
 Planning is **human-controlled**. Your job is to make the human's plan *self-consistent* and
@@ -44,8 +78,9 @@ Ask the human (blocking, single question) for the **rigor mode**:
 - **Quick** — admission gate + contradiction surface only; relaxed pushback depth.
 - **Rigorous** — every gap-lens and the full can't-miss checklist.
 
-Either mode **stamps which checks it ran/skipped** into the plan snapshot, so a quick pass never
-poses as a hardened one.
+Either mode **records which lenses it ran/skipped** as a Praxis episode
+(`praxis_record_episode`), so a quick pass never poses as a hardened one — that record lives in
+Praxis, never in a side file.
 
 Then run the tenancy lifecycle through `factory-memory`:
 1. **Save-before-clear** (guardrail — never `clear_graph` without a confirmed snapshot of live state).
@@ -76,8 +111,10 @@ Then run the tenancy lifecycle through `factory-memory`:
 
    **`source="prd-<project>"` is the project identity — it is NOT `meta.scope`.** `source` binds the
    requirement to its PRD (`prd-team-app`, `prd-foo`, …) and is what the downstream completeness
-   query (`praxis_incomplete_requirements(prd-<project>)`) and the done-gate's `R-HAS-SOURCE` rule
-   filter on; `meta.scope` is the orthogonal mvp/post-mvp **tier** tag (read by `build_target.py`).
+   query (`incomplete_requirements(project)` — pass the **BARE** name, e.g. `"team-app"`; the endpoint
+   prepends `prd-` itself, so a prefixed `"prd-team-app"` searches `prd-prd-team-app`, returns EMPTY, and
+   the build gate would wrongly believe every requirement is done) and the done-gate's `R-HAS-SOURCE` rule
+   filter on; `meta.scope` is the orthogonal mvp/post-mvp **tier** tag the build loop reads to pick a tier.
    A requirement tagged only with `scope="team-app"` and **no** `source="prd-<project>"` is the exact
    generation drift that went uncaught: it never matched the completeness filter, so the build
    wrongly believed every requirement was done. Every admitted requirement MUST carry
@@ -238,9 +275,17 @@ found, so the gate's coverage compounds the same way the graph does.
 **The judgment pushback runs as a separate, enforced step.** Move 2c's adversarial pass is the
 inline, interactive version for human-led planning. When you arrive here via the intake pipeline,
 the cold-eyes adversarial + underspecification audit is **`factory-audit`** — a distinct step over
-the admitted-but-not-yet-blessed set, gated by a Stop hook (which independently re-runs `plan_gate`)
-so the plan cannot be snapshotted until every requirement is challenged-and-resolved. Run it before
-`save_snapshot`.
+the admitted-but-not-yet-blessed set. **It carries no findings state machine of its own:** every
+finding becomes a first-class Praxis node the same done-gate already reads — an underspecified
+requirement is marked incomplete, a missing consideration is admitted as a new requirement/check —
+so there is nothing to track on the side. The ONLY residue the audit leaves is one **panel-ran
+assertion**: `praxis_record_episode` recording that the audit ran over this `source="prd-<project>"`
+set (and its verdict), so the act of auditing cannot be silently skipped. The factory has a SINGLE Stop hook
+(`build_completeness_gate`, for the BUILD phase); planning is **human-gated**, not hook-gated. Before
+blessing, two things must hold, checked **live from Praxis** (never a manifest file): (a)
+`plan_gate.evaluate_plan` passes over the live requirements, and (b) that panel-ran episode exists. The
+human clears the gate only once both hold; any gap the audit admits becomes a Praxis ticket/check that
+the one build gate later forces to done. Run `factory-audit` before `save_snapshot`.
 
 **Stop by information-gain, not by exhaustion.** When the next question's expected information
 gain is low and the gate is reachable, say so and STOP asking — do not loop. Beware the

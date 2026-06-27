@@ -9,12 +9,13 @@ Praxis is the foundation. The factory's method is **heavy planning → exhaustiv
 ## The one spine
 Every substantive gate is the same machine:
 
-> **for every item in a coverage SET, prove it is addressed against a TARGET; recompute from evidence; never trust a self-flag; loop-guard; fail-open; block until zero holes.**
+> **for every item in a coverage SET, prove it is addressed against a TARGET; recompute from evidence; never trust a self-flag; loop-guard; fail-CLOSED (Praxis unreachable ⇒ block); block until zero holes.**
 
-This already exists three times in the code:
-- `hooks/plan_audit_gate.py` — every requirement has every challenge closed (+ techDecisions, testStrategy).
-- `hooks/build_completeness_gate.py` — every build-target requirement verified-complete.
-- `hooks/review_gate.py` — every review finding closed.
+The gate spine has collapsed to the single `hooks/build_completeness_gate.py` — every in-scope
+ticket's pinned checks (the coverage SET, resolved live from Praxis) must be passed. The old
+per-phase gates (plan-audit, review, wireframe, preflight) are gone: their work is now ordinary
+tickets/checks in Praxis that this one gate enforces. The gate reads Praxis live and fails
+**closed** (Praxis unreachable ⇒ block).
 
 The reframe: **make the coverage SET come from Praxis instead of being hard-coded**, and recognize that planning, validation (the coding agent), and the eval are all *the same spine with different parameters*.
 
@@ -29,15 +30,24 @@ The reframe: **make the coverage SET come from Praxis instead of being hard-code
 Gates never remediate — they block and report. The differing responses are the agent loop the gate drives, so they don't split the engine.
 
 ## Data-driven gates (the mechanism)
-Hooks **deliberately never call Praxis** (replicating MCP auth from a hook is fragile — see `build_completeness_gate.py:14-18`). So:
+The single gate reads Praxis **live** (via the stdlib-only `hooks/_praxis.py` client — no MCP auth
+replicated, see `docs/factory-state-contract.md`) and **fails closed** if Praxis is unreachable.
+There is **no `.factory/*.json` manifest** — that pattern is deleted. The flow is:
 
-> **skill pulls the checklist from the Praxis snapshot → writes each applicable check into the `.factory/*.json` manifest → the generic hook enforces "every check entry is closed-with-evidence."**
+> **at ticket start the skill RESOLVES which checks apply by QUERY (tag ∪ surface ∪ semantic) against
+> the active checks in Praxis, and PINS the resolved set onto the TICKET NODE (`meta.pinned_checks`)
+> as this pass's completion contract → the build records each pass ON THE TICKET NODE → the gate reads
+> the ticket's pinned checks live and enforces "every pinned check is passed."**
 
-Result: the hook gets *simpler and fully generic* (it stops knowing `GAP_LENSES`); all Praxis-awareness lives in the skill where MCP access already is. **Adding a check = adding a Praxis fact. No code change.**
+Result: the hook is fully generic (it knows no hard-coded `GAP_LENSES`); all check content lives in
+Praxis. **Adding a check = adding a Praxis fact. No code change, no file written.** A check is
+declarative and read-only during builds; it owns its own applicability predicate (`meta.applies_to` /
+bound surface), and a ticket never carries an authored list of its checks — *which checks apply is a
+query resolved fresh at start*, never pre-bound.
 
 Check rigor by kind:
-- `deterministic` → a registered `Gate` in `src/agent_factory/gate.py` `REGISTRY` (today's `plan_gate` rules); the hook re-runs it.
-- `agent-evaluated` → an **independent** (evaluator ≠ author) recorded pass + evidence; the hook recomputes closure from the evidence (exactly how challenges/findings work today).
+- `deterministic` → a registered `Gate` in `src/agent_factory/gate.py` `REGISTRY` (today's `plan_gate` rules); re-run live.
+- `agent-evaluated` → an **independent** (evaluator ≠ author) recorded pass + evidence on the ticket node; closure is recomputed from the evidence (exactly how challenges/findings work today).
 
 ## Eval vs. gate (same spine, different epistemics)
 - The **eval** scores against a **GOLDEN** (ground truth — the known-good plan) → it *measures the planner's hole rate*. Offline.

@@ -4,8 +4,10 @@
 
 The earlier Praxis codebase map (of `../praxis`) established that `category`, `source`,
 `meta`, and `scope` are **free-form** — only `requirement`, `surface`, `episodic` are
-reserved. The factory's "skill pulls + filters + writes manifest; hook enforces" pattern
-keeps most logic client-side. So the new vocabulary needs **no Praxis schema/code change**.
+reserved. The factory's "skill resolves the applicable checks by query and PINS them onto the ticket
+node (`meta.pinned_checks`); the gate reads the ticket's pinned checks live and enforces closure"
+pattern keeps the check content in Praxis and writes NO files. So the new vocabulary needs **no Praxis
+schema/code change**.
 
 ## The new fact: a "check"
 ```

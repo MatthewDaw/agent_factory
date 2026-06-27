@@ -1,16 +1,28 @@
 # Agent Factory
 
 A Praxis-backed **agent factory**, delivered as a Claude Code plugin: it turns a PRD into a
-clickable wireframe, a hardened plan, and a built-and-deployed app — via a **plan → execute →
-verify** loop with compounding memory. Every phase is **gated** (Stop-hook forcing functions, not
-just prose), and the gates lean on a **cold-eyes review panel** so emergent defects per-item checks
-miss get caught.
+clickable wireframe, a hardened plan, and a built-and-deployed app. **[METHODOLOGY.md](/METHODOLOGY.md)
+is the single canonical statement of how it works — read it first.**
+
+**The whole factory is one loop, run against one source of truth.** State lives in exactly ONE
+place — **Praxis**. There are no JSON status files, no on-disk locks, no self-set "done" flags. A
+ticket (requirement) and a check are Praxis facts; everything about what is built / claimed / passed
+is state *on the ticket's Praxis node*. Every unit of work is the same loop:
+
+> **FIND** the next incomplete ticket in scope → **CLAIM** it (a heartbeated lease, not a lock) →
+> **RESOLVE** which checks apply *by query* (never a pre-authored list) → **BUILD** → **VERIFY** each
+> pinned check, recording the pass on the ticket node → **FINISH** (release as finished) only when
+> every pinned check passed.
+
+A **single Stop-hook gate** (`hooks/build_completeness_gate.py`) reads Praxis live and enforces this
+loop. Praxis is a **hard dependency**: if it is unreachable the gate **fails closed and BLOCKS** — it
+never proceeds on a guess.
 
 - **Knowing system** → [Praxis](https://github.com/Antonelli-Tech-Solutions/praxis) knowledge graph
   (retrieval, dedup, contradiction handling, provenance, requirement-completeness), via the
-  `praxis_*` MCP tools.
-- **Doing system + glue** → this repo: skills that drive the loop, gate hooks that enforce it, and
-  small deterministic helpers in `src/agent_factory/`.
+  `praxis_*` MCP tools. It is the single source of dynamic truth.
+- **Doing system + glue** → this repo: skills that drive the loop, the one gate hook that enforces
+  it, and small deterministic helpers in `src/agent_factory/`.
 
 ---
 
@@ -18,28 +30,33 @@ miss get caught.
 
 ```
  PRD (docs/inspiration/*.txt) ─┐
-                               ├─►  factory-wireframe   →  clickable HTML wireframes  [wireframe gate]
- wireframe ────────────────────┘
+                               ├─►  factory-wireframe   →  clickable HTML wireframes
+ wireframe ────────────────────┘     (a surface with no screen = an incomplete ticket)
                                │
-            PRD + wireframe ───►  factory-intake        →  requirement-candidates.json [candidate review]
+            PRD + wireframe ───►  factory-intake        →  candidate requirements
                                │
-                               ├─►  factory-plan         →  admit + harden requirements in Praxis
+                               ├─►  factory-plan         →  admit + harden requirements in Praxis (tickets)
                                │
-                               ├─►  factory-audit        →  cold-eyes challenge + tech/test sweep [plan-audit gate]
+                               ├─►  factory-audit        →  cold-eyes challenge + tech/test sweep
+                               │                            (findings become tickets/checks)
                                │                            → save_snapshot("prd-<project>")
-                               ├─►  factory-review(plan)  →  cold-eyes panel over the whole plan   [review gate]
+                               ├─►  factory-review(plan)  →  cold-eyes panel; findings become tickets/checks
                                │
-            blessed plan ──────►  factory-execute        →  preflight [preflight gate]
-                               │                            → fan-out build (mvp+automated)
-                               │                            → factory-verify each slice
-                               │                            → deploy  [build-completeness gate, incl. deploy]
-                               └─►  factory-review(work)  →  cold-eyes panel over the diff          [review gate]
+            blessed plan ──────►  factory-execute /      →  FIND→CLAIM→RESOLVE→BUILD→VERIFY→FINISH
+                               │   factory-churn-tickets     loop over incomplete tickets, live vs Praxis
+                               │                            (missing env dep = a failing check)
+                               └─►  factory-review(work)  →  cold-eyes panel over the diff; findings = tickets
                                                             → shipped
 ```
 
-The **five Stop-hook gates** (in `hooks/`) make each phase non-skippable; they read small JSON
-manifests under `<project>/.factory/` and block the turn from ending until their bar is met. They
-**defer** automatically while a fanned-out Workflow / subagents are still running.
+There is **one** Stop-hook gate (`hooks/build_completeness_gate.py`). Everything the old per-phase
+gates used to enforce is now either a **ticket** or a **check** in Praxis, and this gate enforces the
+one question they all reduce to — *"are there incomplete tickets/checks for the active build scope?"*
+— read **live from Praxis, fail-closed**. There are **no `.factory/*.json` manifests** and no status
+files of any kind. The gate stays inert for ordinary repo conversation; the build loop arms it by
+**claiming** a ticket. A supervisor that fanned work out to sub-agents owns no claim of its own, so
+the gate is naturally inert for it while the builders (each claiming under their own session) work —
+no special subagent-deferral plumbing.
 
 ---
 
@@ -76,8 +93,11 @@ silently skips) until you install it:
 
 ### 3. Python on PATH
 
-The gate hooks are Python scripts. Ensure `python` is on PATH — if it isn't, the hooks **fail open**
-(they won't trap you, but they also can't enforce). `python --version` should work in a plain shell.
+The gate hook is a Python script. **Ensure `python` is on PATH** — `python --version` should work in
+a plain shell. The gate's own logic fails **closed** (Praxis unreachable ⇒ it BLOCKS), but it can
+only do that if Claude Code can launch it; if `python` is missing the hook process can't start at
+all and the harness has nothing to enforce. Treat Python-on-PATH as a hard prerequisite, not
+optional.
 
 ### 4. Raise the Stop-hook block cap
 
@@ -153,51 +173,60 @@ This is one continuous, human-controlled phase that ends with a blessed `prd-<pr
 
 What happens, and where you're involved:
 1. **factory-intake** extracts a candidate inventory from the PRD (behavior) + wireframe (surfaces),
-   reconciles duplicates, and pauses at a **candidate review** (`.factory/requirement-candidates.json`).
-2. **factory-plan** admits each requirement (`source="prd-<project>"` = the project identity;
-   `meta.scope` = `mvp`/`post-mvp` tier; `meta.verify` = `automated`/`manual`). Large plans use the
-   **raw bulk fast-lane** (`add_insights(raw=True)`) to avoid the per-item dedup that times out /
-   over-merges; small edits keep live contradiction surfacing.
+   reconciles duplicates, and pauses for you to review the candidates before admission.
+2. **factory-plan** admits each requirement as a Praxis ticket (`source="prd-<project>"` = the
+   project identity; `meta.scope` = `mvp`/`post-mvp` tier; `meta.verify` = `automated`/`manual`).
+   Large plans use the **raw bulk fast-lane** (`add_insights(raw=True)`) to avoid the per-item dedup
+   that times out / over-merges; small edits keep live contradiction surfacing.
 3. **factory-audit** runs an independent **cold-eyes** pass: adversarially challenges every
    requirement, routes underspecification (research / default / ask you / defer), forces a derived
    technical-architecture sweep **and a mandatory test strategy + CI**, and **reconciles** near-dup
-   requirements in the graph. The **plan-audit gate** (`.factory/plan-audit.json`) blocks the
-   snapshot until all of that is clean.
+   requirements in the graph. Anything it surfaces becomes a **ticket or a check in Praxis** — so the
+   one completeness gate enforces it. (A small "panel-ran" Praxis episode records that the audit
+   happened so it cannot be silently skipped — not a findings state machine.)
 4. `save_snapshot("prd-<project>")` blesses the plan.
 5. **factory-review (plan mode)** runs the compound-engineering panel over the *whole* plan
-   (coherence / feasibility / scope / security / completeness). The **review gate**
-   (`.factory/review-status.json`) blocks "planning done" until findings are resolved/accepted (or
-   the review is skipped-with-reason for small work).
+   (coherence / feasibility / scope / security / completeness). Each finding lands as a Praxis
+   ticket/check; an open finding is just an incomplete ticket the completeness gate enforces. The
+   review is skippable for small work, but **never silently** — a skip records a reason
+   (`praxis_record_episode`).
 
 ### Step 3 — Build (preflight → fan-out execute → deploy → work-review)
 
 Run this in the **app repo**, in a session with Praxis pointed at the same org (so it sees the plan).
 
 > Run factory-execute to build the app from the blessed `prd-<project>` snapshot into this repo.
-> Preflight the environment first, build the MVP + automated-verify set (fan out in parallel), gate
-> every slice via factory-verify, deploy to the techDecisions target, and run the work-review before
-> shipping.
+> Build the MVP + automated-verify set (fan out in parallel), gate every slice via factory-verify,
+> deploy to the techDecisions target, and run the work-review before shipping.
 
-What happens:
-1. **Preflight** — `factory-execute` derives the build's external dependencies from the plan's
-   techDecisions (credentials, API keys, services, tooling) and checks each into
-   `.factory/preflight.json`. The **preflight gate** blocks coding until every dep is present — if
-   something's missing it tells you *exactly* what to provide; it never stubs a credential.
-2. **Fan-out build** — each pass it computes the *buildable frontier* (the mvp+automated build set,
+What happens (every slice follows **FIND→CLAIM→RESOLVE→BUILD→VERIFY→FINISH**, all state in Praxis):
+1. **Env dependencies are checks, not a separate gate** — the build's external dependencies derived
+   from the plan's techDecisions (credentials, API keys, services, tooling) become **failing checks**
+   on their tickets. An unprovisioned dependency is just an incomplete ticket; the one completeness
+   gate refuses to pass while it fails, and the message tells you *exactly* what to provide. It never
+   stubs a credential.
+2. **Fan-out build** — each pass computes the *buildable frontier* (the mvp+automated build set,
    dependencies satisfied) and **fans it out as parallel worktree-isolated builders via a Workflow**
-   (not a serial queue). Each builder builds its slice, gates it through **factory-verify** (external
-   signals only — tests / type-check / build), and on a verified pass records an outcome.
-3. **Completeness gate** — "done" is mechanical: `praxis_incomplete_requirements(prd-<project>)`
-   over the build set must be empty. The **build-completeness gate** (`.factory/build-status.json`)
-   won't let the worker stop while anything's unbuilt. (Post-MVP and manual-verify requirements are
-   excluded/deferred — never block the gate.)
-4. **Deploy** — a **hard gate**: the plan isn't done until it's deployed and the deployment verified,
-   unless you explicitly opt out (`deployment.required:false` + a reason).
-5. **factory-review (work mode)** — the panel reviews the whole diff before "shipped".
+   (not a serial queue). Each builder **claims** its ticket (a heartbeated lease), **resolves** the
+   ticket's checks by query and pins them, builds, gates through **factory-verify** (external signals
+   only — tests / type-check / build) recording each pass **on the ticket node**, and **releases as
+   finished** only when every pinned check passed. A failed check records a failed outcome — the
+   ticket regresses and re-enters the FIND set.
+3. **The one completeness gate** — "done" is mechanical and read **live from Praxis**:
+   `praxis_incomplete_requirements(prd-<project>)` over the build set must be empty and no session
+   may hold an unfinished claim. There is no manifest — the gate reads ticket `meta.build_state` and
+   lease/claim state live. (Post-MVP and manual-verify requirements are excluded/deferred — never
+   block the gate.) Pass the **bare** project name to the query; the endpoint prepends `prd-` itself.
+4. **Deploy** — deployment + its verification are themselves enforced as tickets/checks: the build
+   isn't done until it's deployed and verified, unless you explicitly opt out
+   (`deployment.required:false` + a recorded reason).
+5. **factory-review (work mode)** — the panel reviews the whole diff before "shipped"; findings land
+   as tickets/checks the same gate enforces.
 
-> **Resuming:** completeness is outcome-grounded, so you can stop and restart a build any time —
-> a fresh `factory-execute` re-queries `incomplete_requirements` and **resumes exactly where it left
-> off** (only the not-yet-verified slices remain).
+> **Resuming:** completeness is outcome-grounded and stateless on disk, so you can stop and restart a
+> build any time — a fresh `factory-execute` re-queries `incomplete_requirements` live and **resumes
+> exactly where it left off** (only the not-yet-finished tickets remain; a dead agent's stale lease
+> auto-reclaims so nothing dangles).
 
 ---
 
@@ -212,22 +241,28 @@ Claude Code activates these from intent (or invoke by name, e.g. `factory-plan`)
 | **factory-plan** | Human-controlled plan hardening — admit requirements, surface contradictions, run the deterministic `plan_gate`. |
 | **factory-audit** | The separate cold-eyes judgment audit — adversarial challenge, underspecification routing, technical + **test-strategy** sweep, near-dup reconciliation. |
 | **factory-review** | The holistic cold-eyes **panel** (compound-engineering reviewers) at plan-finalization and build-finalization. |
-| **factory-execute** | The build loop — preflight, fan-out build, verify, deploy. |
+| **factory-execute** | The build loop — claim a ticket, resolve+pin its checks, build, verify, deploy. |
+| **factory-churn-tickets** | Drive the incomplete-ticket set to done — the "go work unfinished" entry point. |
 | **factory-verify** | The pass/fail gate `factory-execute` runs against **external** signals only. |
 | **factory-memory** | The single policy surface for all Praxis reads/writes; used by the others. |
 
-## The gates (`hooks/`)
+## The gate (`hooks/`)
 
-Five Stop-hook forcing functions, each armed by a `<project>/.factory/*.json` manifest, fail-open,
-loop-guarded, and **deferring while real subagents/workflows run** (via `_gate_common.py`):
+The gate spine collapses to **one** Stop-hook forcing function, which reads Praxis live and
+fails **closed** (if Praxis is unreachable it BLOCKS, never passes):
 
 | Gate | Enforces |
 |---|---|
-| `wireframe_gate.py` | Every requirement maps to a screen; no dead nav links. |
-| `plan_audit_gate.py` | `plan_gate` clean + no open contradictions + every requirement challenged + tech decisions + **test strategy** complete. |
-| `review_gate.py` | The cold-eyes panel ran and every finding is resolved/accepted (or skipped-with-reason). |
-| `build_completeness_gate.py` | The mvp+automated build set is verified-complete **and deployed** (unless opted out). |
-| `preflight_gate.py` | The build's derived environment dependencies are all provisioned before coding starts. |
+| `build_completeness_gate.py` | No incomplete tickets/checks for this scope — every pinned check on every in-scope ticket has passed (and the build is deployed unless opted out), read live from Praxis. |
+
+Everything the old per-phase gates (preflight / wireframe / plan-audit / review) did becomes a ticket
+or a check in Praxis: a wireframe surface with no screen is an **incomplete requirement**, a missing
+env dependency is a **failing check**, a review/audit finding is a **ticket/check**. The one
+completeness gate enforces them all. The gate reads its state live from Praxis via
+`hooks/_praxis.py` + `hooks/_ticket_state.py` — see
+[docs/factory-state-contract.md](/docs/factory-state-contract.md) for the canonical meta keys, the
+per-ticket lifecycle, and the lease/claim semantics. There are **no `.factory/*.json` status files**;
+`.factory/` is ignored only for genuinely-static local config.
 
 ## Key conventions
 
@@ -249,15 +284,21 @@ as deferred owned-decisions for morning review. Read it before launching an over
 
 ```
 .claude-plugin/                # plugin.json + marketplace.json (declares the CE dependency)
+METHODOLOGY.md                 # the single canonical statement of how the factory works — read first
 CONSTITUTION.md                # the autonomous-run operating contract
-skills/                        # factory-wireframe / intake / plan / audit / review / execute / verify / memory
-hooks/                         # the 5 Stop-hook gates + _gate_common (subagent deferral) + hooks.json
+skills/                        # factory-wireframe / intake / plan / audit / review / execute / churn / verify / memory
+hooks/
+  build_completeness_gate.py   # THE single Stop-hook gate (reads Praxis live, fails closed)
+  _praxis.py                   # stdlib-only Praxis HTTP client (the single source of dynamic truth)
+  _ticket_state.py             # per-ticket lifecycle: claim/lease/heartbeat, resolve+pin checks, release
 src/agent_factory/
   plan_gate.py                 # deterministic plan done-gate (acceptance / vague / dangling / source)
   build_target.py              # mvp+automated build-set selector
+  validation_target.py         # resolve a ticket's validation checks from Praxis
   gate.py                      # shared gate Verdict/Reason contract
   tabular.py                   # deterministic table linearizer (H6 ingestion shim)
   event_log.py                 # append-only run log
+docs/factory-state-contract.md # canonical: meta keys, ticket lifecycle, lease, check-resolution-as-query
 evals/cases/plan_gate/         # plan-gate eval cases
 tests/                         # unit tests
 docs/                          # vision, reference model, Praxis notes, plans

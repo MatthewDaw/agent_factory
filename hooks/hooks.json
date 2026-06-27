@@ -5,23 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"${CLAUDE_PLUGIN_ROOT}/hooks/wireframe_gate.py\""
-          },
-          {
-            "type": "command",
-            "command": "python \"${CLAUDE_PLUGIN_ROOT}/hooks/plan_audit_gate.py\""
-          },
-          {
-            "type": "command",
-            "command": "python \"${CLAUDE_PLUGIN_ROOT}/hooks/preflight_gate.py\""
-          },
-          {
-            "type": "command",
             "command": "python \"${CLAUDE_PLUGIN_ROOT}/hooks/build_completeness_gate.py\""
-          },
-          {
-            "type": "command",
-            "command": "python \"${CLAUDE_PLUGIN_ROOT}/hooks/review_gate.py\""
           }
         ]
       }

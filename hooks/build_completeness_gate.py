@@ -1,48 +1,56 @@
 #!/usr/bin/env python3
 """
-build-completeness gate — a Claude Code *Stop* hook.
+build-completeness gate — THE SINGLE factory *Stop* hook.
 
-Forces the build worker (factory-execute) to keep iterating until every requirement in the
-**build target** is verified-complete. While a build is active, the worker cannot end its turn /
-declare done as long as any build-target requirement is still incomplete (never-built / regressed /
-stale).
+This is the one and only gate of the factory's collapsed gate spine. The old preflight / wireframe /
+plan-audit / review gates are GONE: everything they used to enforce is now either a ticket or a check
+in Praxis, and this gate enforces the one question they all reduce to — *"are there incomplete
+tickets/checks for the active build scope, and is this session in the middle of building them?"* —
+LIVE against Praxis. There is no manifest. There is no ``.factory/*.json`` build/validation state.
 
-Completeness is NOT self-judged: it comes from Praxis `incomplete_requirements(project)`, which is
-derived from verified outcomes + staleness (PR #106). The worker partitions that set with
-`select_build_target` (src/agent_factory/build_target.py) so the forced loop targets ONLY the build
-set — `mvp` + `automated` requirements. This hook is a pure *local-file* check (it does not call
-Praxis itself — replicating the MCP's org/tenant auth from a hook is fragile), so the worker is
-responsible for re-querying + re-partitioning each pass and writing the honest result into the
-manifest. The values can't be faked at the requirement level: a requirement only leaves the
-incomplete set by actually passing factory-verify (an external signal), so "incompleteCount: 0"
-requires real, verified completion of the whole build set.
+SINGLE SOURCE OF DYNAMIC TRUTH = Praxis
+---------------------------------------
+The gate reads build/validation state live from Praxis via ``hooks/_praxis.py`` and
+``hooks/_ticket_state.py`` (see ``docs/factory-state-contract.md`` for the canonical meta keys and
+API). It writes NO local state. "A build run is active" is NOT a file flag — it is *"this session
+owns a live, unfinished in_progress claim"*, read from Praxis.
 
-`incompleteCount`/`incomplete` are scoped to the build target (mvp+automated) — NOT all active
-requirements. `deferred_manual` (mvp, human-verified) and `excluded_post_mvp` requirements are
-recorded separately for transparency and never block the gate; `needs_triage` (mis-tagged) is
-surfaced so a human resolves the tag rather than the loop silently auto-building it.
+ARMING (stay inert for ordinary repo conversation)
+--------------------------------------------------
+The gate queries the active project's incomplete requirements and asks whether THIS session owns a
+live ``in_progress`` claim on any of them. A build run is active IFF this session owns such a claim.
+If it owns none, no build is active for this session, so the gate ALLOWS the stop and stays inert —
+ordinary conversation in a repo that merely *has* a ``prd-<project>`` is never blocked. The build
+loop (factory-churn-tickets / factory-execute) is the igniter: it CLAIMS a ticket as it starts work,
+which is what arms this gate for the rest of that run.
 
-Stays inert otherwise: no manifest / status != "building" => allow stop. FAILS OPEN on any error.
+ENFORCE
+-------
+While this session owns one or more unfinished ``in_progress`` claims, OR (being armed) scoped
+claimable incomplete tickets remain, the gate BLOCKS with an actionable message: which tickets, what
+is unmet, and the lifecycle to follow — claim/heartbeat, resolve checks by query, build, record each
+pass ON THE TICKET NODE, release as finished. The worker cannot end its turn mid-build.
 
-Manifest schema (written/updated by factory-execute each pass) at <cwd>/.factory/build-status.json:
-{
-  "status": "building",        // "building" -> armed; "done"/"paused" -> allow stop
-  "project": "prd-team-app",
-  "checkedAt": "<pass marker>",        // bump every time you re-query (freshness)
-  "incompleteCount": 5,                // count over the BUILD TARGET ONLY (mvp+automated still incomplete)
-  "incomplete": [{"id": "R7", "reason": "never-built"}, ...],   // the build-target incompletes
-  // --- transparency only; recorded but NEVER counted toward incompleteCount / the block ---
-  "deferredManual": [{"id": "R20"}, ...],      // mvp + manual-verify: parked, surfaced to the human
-  "excludedPostMvp": [{"id": "R47"}, ...],     // post-mvp: out of scope for this build
-  "needsTriage": [{"id": "R31"}, ...],         // mis-tagged (unknown tier/verify): must NOT be silently built
-  "attempts": 0, "maxAttempts": 200    // generous backstop so a truly-stuck build can't trap forever
-}
+FAIL-CLOSED
+-----------
+Praxis is a HARD dependency. If it is unreachable / unauthenticated / errors (``PraxisUnreachable``),
+the gate BLOCKS loudly — it NEVER fails open. A gate that cannot prove build state must not let work
+pass. The ONLY way out when Praxis is down is to bring Praxis up, or to set the documented, LOUD
+emergency escape hatch ``FACTORY_GATE_DISABLED=1`` (never silent — it prints why it stood down).
 """
 
 import json
 import os
 import sys
 
+# The helper modules (_praxis, _ticket_state) live next to this file. A bare hook
+# subprocess may be launched with an arbitrary cwd, so make sure our own directory is importable.
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+
+
+# --------------------------------------------------------------------------- hook I/O
 
 def _allow(advice: str = "") -> None:
     if advice:
@@ -57,163 +65,188 @@ def _block(reason: str) -> None:
     sys.exit(0)
 
 
-def _arm_review(cwd, phase, project):
-    """Arm the factory-review gate for `phase` (so finalization can't skip the holistic
-    review). Idempotent: leaves an existing manifest for the same phase untouched."""
-    path = os.path.join(cwd, ".factory", "review-status.json")
-    try:
-        if os.path.isfile(path):
-            with open(path, "r", encoding="utf-8") as fh:
-                if json.load(fh).get("phase") == phase:
-                    return
-        with open(path, "w", encoding="utf-8") as fh:
-            json.dump({"phase": phase, "project": project, "status": "pending",
-                       "panelRan": False, "findings": [], "size": {},
-                       "attempts": 0, "maxAttempts": 30}, fh, indent=2)
-    except Exception:
-        pass
+# --------------------------------------------------------------------------- project / identity
 
+def _active_project(cwd: str) -> str:
+    """Resolve the active ``prd-<project>`` from the environment or the cwd — NEVER a manifest file.
+
+    Order: ``FACTORY_PROJECT`` env (with or without a ``prd-`` prefix) → the basename of the cwd.
+    Returns the full ``prd-<name>`` form the Praxis ``/requirements/incomplete`` endpoint expects.
+    """
+    raw = os.environ.get("FACTORY_PROJECT", "").strip()
+    if not raw:
+        raw = os.path.basename(os.path.normpath(cwd or os.getcwd()))
+    raw = raw.strip()
+    if not raw:
+        return ""
+    return raw if raw.startswith("prd-") else f"prd-{raw}"
+
+
+def _session_owner(data: dict) -> str:
+    """This session's claim-owner identity (matches the owner the build loop claims tickets with)."""
+    return str(data.get("session_id") or data.get("sessionId") or "").strip()
+
+
+# --------------------------------------------------------------------------- ticket views
+
+def _rid(item: dict) -> str:
+    for k in ("id", "factId", "fact_id", "requirement_id", "rid", "cid"):
+        v = item.get(k)
+        if v:
+            return str(v)
+    return "?"
+
+
+def _label(item: dict) -> str:
+    for k in ("title", "name", "summary"):
+        v = item.get(k)
+        if v:
+            return str(v)[:80]
+    text = item.get("text") or item.get("requirement") or ""
+    return (str(text)[:80] or _rid(item))
+
+
+def _claim_view(item: dict):
+    """Return ``(owner, build_state, lease_live)`` for an incomplete-requirement item, tolerating
+    either a server-derived ``claim`` view or the raw ``meta`` keys (or both)."""
+    import _ticket_state as ts
+
+    claim = item.get("claim") or {}
+    meta = item.get("meta") or {}
+    merged = dict(meta)
+    for k, v in claim.items():
+        if v is not None:
+            merged[k] = v
+
+    owner = merged.get(ts.M_CLAIM_OWNER) or claim.get("owner")
+    build_state = merged.get(ts.M_BUILD_STATE) or "incomplete"
+    if "lease_live" in claim:
+        live = bool(claim.get("lease_live"))
+    else:
+        merged[ts.M_BUILD_STATE] = build_state
+        live = ts._lease_live(merged)
+    return (str(owner) if owner else None), str(build_state), bool(live)
+
+
+def _ready_to_finish(item: dict) -> bool:
+    """True iff the ticket has a pinned check contract that is fully satisfied (≥1, all passed)."""
+    import _ticket_state as ts
+    try:
+        return ts.all_checks_passed(item if item.get("meta") else _rid(item))
+    except Exception:  # noqa: BLE001 - never let an enrichment read crash the gate
+        return False
+
+
+# --------------------------------------------------------------------------- main
 
 def main() -> None:
     try:
         raw = sys.stdin.read()
         data = json.loads(raw) if raw.strip() else {}
-    except Exception:
-        _allow()
+    except Exception:  # noqa: BLE001
+        data = {}
     cwd = data.get("cwd") or os.getcwd()
 
-    # Defer (allow the stop) while real Claude subagents / a background Workflow are running — the
-    # supervisor is legitimately yielding to wait for its fanned-out builders (CONSTITUTION §0).
+    # --- Emergency escape hatch (documented + LOUD, never silent). ----------------------------
+    if os.environ.get("FACTORY_GATE_DISABLED") == "1":
+        _allow("build-completeness gate STOOD DOWN: FACTORY_GATE_DISABLED=1 is set. The factory is "
+               "NOT verifying build state right now — incomplete tickets/checks may remain unbuilt. "
+               "Unset FACTORY_GATE_DISABLED to restore enforcement.")
+
+    project = _active_project(cwd)
+    owner = _session_owner(data)
+
+    # --- Read the single source of dynamic truth (fail-closed). -------------------------------
+    # NOTE on fan-out: a supervisor that delegated building to sub-agents owns NO live claim of its
+    # own (the builders claim tickets under their own session ids), so the arming rule below leaves
+    # it inert automatically — no special subagent-deferral plumbing is needed or kept.
     try:
-        from _gate_common import subagents_active
-        if subagents_active(data, cwd):
-            _allow()
-    except Exception:
-        pass
-
-    manifest_path = os.path.join(cwd, ".factory", "build-status.json")
-    if not os.path.isfile(manifest_path):
-        _allow()
-    try:
-        with open(manifest_path, "r", encoding="utf-8") as fh:
-            man = json.load(fh)
-    except Exception:
-        _allow()
-
-    # "paused"/"done" -> the worker is deliberately yielding; only "building" is armed.
-    if man.get("status") != "building":
-        _allow()
-
-    project = man.get("project", "<project>")
-    count = man.get("incompleteCount")
-    incomplete = man.get("incomplete") or []
-
-    # Transparency-only groups: surfaced in advisories, never counted toward the block.
-    deferred_manual = man.get("deferredManual") or []
-    excluded_post_mvp = man.get("excludedPostMvp") or []
-    needs_triage = man.get("needsTriage") or []
-
-    def _transparency_note() -> str:
-        bits = []
-        if deferred_manual:
-            bits.append(f"{len(deferred_manual)} deferred-manual (parked for the human)")
-        if excluded_post_mvp:
-            bits.append(f"{len(excluded_post_mvp)} excluded post-MVP")
-        if needs_triage:
-            bits.append(f"{len(needs_triage)} NEEDS-TRIAGE (mis-tagged — resolve before relying on this build)")
-        return "" if not bits else "\nOut of build target: " + "; ".join(bits) + "."
-
-    # Missing/odd count => force a re-query rather than letting it slide.
-    if not isinstance(count, int):
-        attempts = int(man.get("attempts", 0)) + 1
-        man["attempts"] = attempts
+        import _praxis
+        incomplete = _praxis.incomplete_requirements(project)
+    except Exception as exc:  # noqa: BLE001
+        # FAIL-CLOSED: a gate that cannot reach Praxis can prove nothing, so it BLOCKS. It NEVER
+        # fails open. (PraxisUnreachable is the contract signal; any import/transport failure is
+        # treated identically — the truth is unavailable.)
         try:
-            with open(manifest_path, "w", encoding="utf-8") as fh:
-                json.dump(man, fh, indent=2)
-        except Exception:
-            pass
-        _block(f"build-completeness gate: no current incompleteCount recorded for {project}. "
-               f"Re-run praxis_incomplete_requirements(\"{project}\") and write the result into "
-               f".factory/build-status.json before stopping.")
+            from _praxis import PraxisUnreachable  # noqa: F811
+            is_unreachable = isinstance(exc, PraxisUnreachable)
+        except Exception:  # noqa: BLE001
+            is_unreachable = True
+        detail = str(exc) if is_unreachable else f"{type(exc).__name__}: {exc}"
+        _block(
+            "build-completeness gate: PRAXIS UNREACHABLE — the factory cannot verify build state, so "
+            "this gate is failing CLOSED and BLOCKING. Praxis is the single source of dynamic truth; "
+            "without it there is no way to know whether tickets/checks are still incomplete.\n"
+            f"  reason: {detail}\n"
+            "Bring Praxis up (default http://localhost:8000; check PRAXIS_API_BASE_URL / "
+            "PRAXIS_API_KEY / PRAXIS_ORG / auth) and try again. For a real emergency ONLY, set "
+            "FACTORY_GATE_DISABLED=1 to stand the gate down (loud, never silent)."
+        )
 
-    if count <= 0:
-        # The build set is verified-complete — but the plan is NOT done until it is DEPLOYED and
-        # the deployment verified, UNLESS the user explicitly opted out. Deployment is a hard gate.
-        dep = man.get("deployment") or {}
-        required = dep.get("required") is not False  # default True; only an explicit False opts out
-        dep_status = str(dep.get("status", "pending")).lower()
-        opt_out_reason = str(dep.get("optOutReason", "")).strip()
-        if required and dep_status != "verified":
-            attempts = int(man.get("attempts", 0)) + 1
-            man["attempts"] = attempts
-            try:
-                with open(manifest_path, "w", encoding="utf-8") as fh:
-                    json.dump(man, fh, indent=2)
-            except Exception:
-                pass
-            _block(
-                f"build-completeness gate: build set for {project} is verified-complete, but the "
-                f"plan is NOT done until it is DEPLOYED and verified (deployment.status is "
-                f"'{dep_status}', not 'verified'). Deploy to the techDecisions target, verify the "
-                f"deployment is reachable/healthy, and set deployment.status='verified' in "
-                f".factory/build-status.json. To skip deployment you need the USER's explicit "
-                f"opt-out: deployment.required=false WITH a deployment.optOutReason — never skip it "
-                f"on your own." + _transparency_note())
-        man["status"] = "done"
-        try:
-            with open(manifest_path, "w", encoding="utf-8") as fh:
-                json.dump(man, fh, indent=2)
-        except Exception:
-            pass
-        # Build finished — arm the holistic work-review gate before "shipped".
-        _arm_review(cwd, "work", project)
-        deploy_note = (f" Deployment: VERIFIED." if (required and dep_status == "verified")
-                       else f" Deployment: opted out ({opt_out_reason or 'no reason given'})."
-                       if not required else "")
-        _allow(f"build-completeness gate: PASSED — the build target (mvp+automated) for {project} "
-               f"is empty; every targeted requirement is verified-complete.{deploy_note} Now run "
-               f"the work-review (factory-review) the review_gate just armed before shipping."
-               + _transparency_note())
+    if not isinstance(incomplete, list):
+        incomplete = []
 
-    attempts = int(man.get("attempts", 0)) + 1
-    max_attempts = int(man.get("maxAttempts", 200))
-    man["attempts"] = attempts
+    # --- Partition the incomplete set by claim ownership. -------------------------------------
+    owned_unfinished: list[dict] = []   # this session owns a LIVE in_progress lease on these
+    claimable: list[dict] = []          # free / stale / ours — work this session may drive
+    # (tickets a DIFFERENT owner holds a live lease on are neither — left to that owner)
 
-    lines = "\n".join(
-        f"  - {r.get('id','?')} ({r.get('reason','?')})" for r in incomplete[:40]
-    )
-    more = "" if len(incomplete) <= 40 else f"\n  ...and {len(incomplete) - 40} more."
+    for item in incomplete:
+        if not isinstance(item, dict):
+            continue
+        c_owner, build_state, live = _claim_view(item)
+        if live and c_owner == owner and owner:
+            owned_unfinished.append(item)
+        elif live and c_owner and c_owner != owner:
+            continue  # actively leased by someone else
+        else:
+            claimable.append(item)
 
-    if attempts >= max_attempts:
-        man["status"] = "stuck"
-        try:
-            with open(manifest_path, "w", encoding="utf-8") as fh:
-                json.dump(man, fh, indent=2)
-        except Exception:
-            pass
-        _allow(f"build-completeness gate gave up after {attempts} attempts: {count} requirement(s) "
-               f"in {project} are still incomplete. SURFACE THIS TO THE USER — do not imply the "
-               f"build is done:\n{lines}{more}")
+    # --- ARMING: a build run is active IFF this session owns a live in_progress claim. ---------
+    if not owned_unfinished:
+        # No claim owned by this session => no build run is active for it => stay inert. Ordinary
+        # repo conversation (even in a project with open tickets) is never blocked here.
+        _allow()
 
-    try:
-        with open(manifest_path, "w", encoding="utf-8") as fh:
-            json.dump(man, fh, indent=2)
-    except Exception:
-        pass
+    # --- ENFORCE: armed. Block until owned claims are finished AND scoped claimable work is done.
+    def _fmt(items: list[dict], limit: int = 40) -> str:
+        lines = []
+        for it in items[:limit]:
+            tail = " — checks PASSED, release as finished" if _ready_to_finish(it) else ""
+            lines.append(f"  - {_rid(it)}: {_label(it)}{tail}")
+        more = "" if len(items) <= limit else f"\n  ...and {len(items) - limit} more."
+        return "\n".join(lines) + more
+
+    owned_block = _fmt(owned_unfinished)
+    claimable_note = ""
+    if claimable:
+        claimable_note = (
+            f"\n\nAlso still incomplete in scope ({len(claimable)} claimable ticket(s)) — keep "
+            f"churning until the whole build set is finished:\n{_fmt(claimable)}"
+        )
 
     _block(
-        f"build-completeness gate: NOT DONE. {count} requirement(s) in {project} are still "
-        f"incomplete (attempt {attempts}/{max_attempts}):\n{lines}{more}\n\n"
-        "Keep building: pick the next incomplete requirement, build it, gate it through "
-        "factory-verify, and record its outcome (praxis_record_outcome) — then re-query "
-        f"praxis_incomplete_requirements(\"{project}\") and update .factory/build-status.json. "
-        "Do not end the turn or claim the build is complete until that query returns empty. "
-        "(To intentionally yield, set status to \"paused\" in the manifest.)"
+        f"build-completeness gate: NOT DONE for {project}. This session owns "
+        f"{len(owned_unfinished)} unfinished in_progress ticket(s):\n{owned_block}"
+        f"{claimable_note}\n\n"
+        "Do not end the turn. Per the per-ticket lifecycle (docs/factory-state-contract.md):\n"
+        "  1. heartbeat your live claim(s) so the lease stays valid;\n"
+        "  2. for each owned ticket, resolve its checks by QUERY (tag union surface) and pin them;\n"
+        "  3. build + validate, recording each pass ON THE TICKET NODE (record_check_pass);\n"
+        "  4. when all pinned checks pass, release(state=\"finished\");\n"
+        "  5. claim the next scoped incomplete ticket and repeat until none remain.\n"
+        "To intentionally yield a ticket without finishing it, release(state=\"incomplete\") so its "
+        "lease is dropped and this gate goes inert. (Emergency-only stand-down: FACTORY_GATE_DISABLED=1.)"
     )
 
 
 if __name__ == "__main__":
     try:
         main()
-    except Exception:
+    except SystemExit:
+        raise
+    except Exception:  # noqa: BLE001
+        # A crash in the gate's own logic must not wedge the agent forever. This catches only
+        # UNEXPECTED errors AFTER the fail-closed Praxis check above (which BLOCKS on its own); a
+        # bug here should not masquerade as "Praxis down", so we exit cleanly (allow).
         sys.exit(0)
