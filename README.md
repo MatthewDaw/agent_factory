@@ -30,23 +30,24 @@ never proceeds on a guess.
 
 ```
  PRD (docs/inspiration/*.txt) ─┐
-                               ├─►  factory-wireframe   →  clickable HTML wireframes
- wireframe ────────────────────┘     (a surface with no screen = an incomplete ticket)
+                               ├─►  af-plan        →  explore / research → messy plan doc
+                               │                         (sibling: af-wireframe → clickable HTML
+                               │                          wireframes; a surface with no screen
+                               │                          = an incomplete ticket)
                                │
-            PRD + wireframe ───►  factory-intake        →  candidate requirements
+            plan + wireframe ──►  af-intake        →  admit + harden requirements in Praxis (tickets),
+                               │                        then ALL validation in one write-path:
+                               │                        cold-eyes challenge + tech/test sweep,
+                               │                        planning checks, and the plan-finalization
+                               │                        panel — findings become tickets/checks
+                               │                        → save_snapshot("prd-<project>")
                                │
-                               ├─►  factory-plan         →  admit + harden requirements in Praxis (tickets)
-                               │
-                               ├─►  factory-audit        →  cold-eyes challenge + tech/test sweep
-                               │                            (findings become tickets/checks)
-                               │                            → save_snapshot("prd-<project>")
-                               ├─►  factory-review(plan)  →  cold-eyes panel; findings become tickets/checks
-                               │
-            blessed plan ──────►  factory-execute /      →  FIND→CLAIM→RESOLVE→BUILD→VERIFY→FINISH
-                               │   factory-churn-tickets     loop over incomplete tickets, live vs Praxis
-                               │                            (missing env dep = a failing check)
-                               └─►  factory-review(work)  →  cold-eyes panel over the diff; findings = tickets
-                                                            → shipped
+            blessed plan ──────►  af-build         →  FIND→CLAIM→RESOLVE→BUILD→VERIFY→FINISH
+                               │                        loop over incomplete tickets, live vs Praxis
+                               │                        (missing env dep = a failing check),
+                               │                        always running validation + the work-review
+                               │                        panel over the diff; findings = tickets
+                               └────────────────────►   → shipped
 ```
 
 There is **one** Stop-hook gate (`hooks/build_completeness_gate.py`). Everything the old per-phase
@@ -140,7 +141,7 @@ claude mcp add praxis -e PRAXIS_MCP_CACHE=/abs/path/to/your-cache.json -- \
 
 > The factory runs in a dedicated Praxis org. Tenancy is single-principal, so projects are
 > partitioned with **snapshots + read-only mounts**, not per-project user ids. All access flows
-> through the `factory-memory` policy. See
+> through the knowledge-port policy ([docs/af-memory-policy.md](/docs/af-memory-policy.md)). See
 > [docs/praxis-and-how-we-use-it.md](/docs/praxis-and-how-we-use-it.md).
 
 ---
@@ -153,7 +154,7 @@ connected. Run **attended** the first time (you answer the audit's questions and
 
 ### Step 1 — Wireframe (optional but recommended)
 
-`factory-wireframe` turns a PRD into complete, clickable HTML wireframes (split by persona, e.g. a
+`af-wireframe` turns a PRD into complete, clickable HTML wireframes (split by persona, e.g. a
 mobile player app + a web admin console), with a coverage gate that won't let it claim done until
 every requirement + implied state maps to a screen.
 
@@ -161,43 +162,47 @@ every requirement + implied state maps to a screen.
 > Read every doc there. Cover the full MVP and post-MVP, split by user persona, mobile-responsive
 > for the player app. Output to `wireframe-rebuild/`, and show me a coverage table.
 
-### Step 2 — Plan (intake → plan → audit → plan-review)
+### Step 2 — Plan (plan → intake = admit + all validation)
 
 This is one continuous, human-controlled phase that ends with a blessed `prd-<project>` snapshot.
+`af-plan` explores/researches into a messy plan doc; `af-intake` is the single write-path that
+admits the requirements **and** runs all the validation (audit, planning checks, plan-finalization
+panel) before the snapshot.
 
-> Run factory-intake to turn the prose PRD in `docs/inspiration/` plus the approved wireframes
+> Run af-intake to turn the prose PRD in `docs/inspiration/` plus the approved wireframes
 > (`wireframe-rebuild/wireframe-player.html`, `wireframe-rebuild/wireframe-admin.html`) into the
 > hardened `prd-<project>` requirement set in Praxis. Use **Rigorous** mode. Admit during ingestion
-> with `source="prd-<project>"`, then run the factory-audit step and the plan-review before
-> `save_snapshot`.
+> with `source="prd-<project>"`, then run af-intake's validation (the cold-eyes audit and the
+> plan-finalization panel) before `save_snapshot`.
 
 What happens, and where you're involved:
-1. **factory-intake** extracts a candidate inventory from the PRD (behavior) + wireframe (surfaces),
-   reconciles duplicates, and pauses for you to review the candidates before admission.
-2. **factory-plan** admits each requirement as a Praxis ticket (`source="prd-<project>"` = the
+1. **af-plan** explores and researches the PRD (behavior) + wireframe (surfaces) into a messy
+   candidate inventory, reconciles duplicates, and pauses for you to review the candidates before
+   admission.
+2. **af-intake** admits each requirement as a Praxis ticket (`source="prd-<project>"` = the
    project identity; `meta.scope` = `mvp`/`post-mvp` tier; `meta.verify` = `automated`/`manual`).
    Large plans use the **raw bulk fast-lane** (`add_insights(raw=True)`) to avoid the per-item dedup
    that times out / over-merges; small edits keep live contradiction surfacing.
-3. **factory-audit** runs an independent **cold-eyes** pass: adversarially challenges every
+3. **af-intake validation** runs an independent **cold-eyes** pass: adversarially challenges every
    requirement, routes underspecification (research / default / ask you / defer), forces a derived
    technical-architecture sweep **and a mandatory test strategy + CI**, and **reconciles** near-dup
    requirements in the graph. Anything it surfaces becomes a **ticket or a check in Praxis** — so the
-   one completeness gate enforces it. (A small "panel-ran" Praxis episode records that the audit
+   one completeness gate enforces it. (A small "panel-ran" Praxis episode records that the validation
    happened so it cannot be silently skipped — not a findings state machine.)
 4. `save_snapshot("prd-<project>")` blesses the plan.
-5. **factory-review (plan mode)** runs the compound-engineering panel over the *whole* plan
-   (coherence / feasibility / scope / security / completeness). Each finding lands as a Praxis
+5. **af-intake's plan-finalization panel** runs the compound-engineering reviewers over the *whole*
+   plan (coherence / feasibility / scope / security / completeness). Each finding lands as a Praxis
    ticket/check; an open finding is just an incomplete ticket the completeness gate enforces. The
    review is skippable for small work, but **never silently** — a skip records a reason
    (`praxis_record_episode`).
 
-### Step 3 — Build (preflight → fan-out execute → deploy → work-review)
+### Step 3 — Build (preflight → fan-out build → deploy → work-review)
 
 Run this in the **app repo**, in a session with Praxis pointed at the same org (so it sees the plan).
 
-> Run factory-execute to build the app from the blessed `prd-<project>` snapshot into this repo.
-> Build the MVP + automated-verify set (fan out in parallel), gate every slice via factory-verify,
-> deploy to the techDecisions target, and run the work-review before shipping.
+> Run af-build to build the app from the blessed `prd-<project>` snapshot into this repo.
+> Build the MVP + automated-verify set (fan out in parallel), gate every slice via af-build's verify
+> step, deploy to the techDecisions target, and run the work-review before shipping.
 
 What happens (every slice follows **FIND→CLAIM→RESOLVE→BUILD→VERIFY→FINISH**, all state in Praxis):
 1. **Env dependencies are checks, not a separate gate** — the build's external dependencies derived
@@ -208,8 +213,8 @@ What happens (every slice follows **FIND→CLAIM→RESOLVE→BUILD→VERIFY→FI
 2. **Fan-out build** — each pass computes the *buildable frontier* (the mvp+automated build set,
    dependencies satisfied) and **fans it out as parallel worktree-isolated builders via a Workflow**
    (not a serial queue). Each builder **claims** its ticket (a heartbeated lease), **resolves** the
-   ticket's checks by query and pins them, builds, gates through **factory-verify** (external signals
-   only — tests / type-check / build) recording each pass **on the ticket node**, and **releases as
+   ticket's checks by query and pins them, builds, gates through **af-build's verify step** (external
+   signals only — tests / type-check / build) recording each pass **on the ticket node**, and **releases as
    finished** only when every pinned check passed. A failed check records a failed outcome — the
    ticket regresses and re-enters the FIND set.
 3. **The one completeness gate** — "done" is mechanical and read **live from Praxis**:
@@ -220,11 +225,11 @@ What happens (every slice follows **FIND→CLAIM→RESOLVE→BUILD→VERIFY→FI
 4. **Deploy** — deployment + its verification are themselves enforced as tickets/checks: the build
    isn't done until it's deployed and verified, unless you explicitly opt out
    (`deployment.required:false` + a recorded reason).
-5. **factory-review (work mode)** — the panel reviews the whole diff before "shipped"; findings land
+5. **af-build's work-review panel** — the panel reviews the whole diff before "shipped"; findings land
    as tickets/checks the same gate enforces.
 
 > **Resuming:** completeness is outcome-grounded and stateless on disk, so you can stop and restart a
-> build any time — a fresh `factory-execute` re-queries `incomplete_requirements` live and **resumes
+> build any time — a fresh `af-build` re-queries `incomplete_requirements` live and **resumes
 > exactly where it left off** (only the not-yet-finished tickets remain; a dead agent's stale lease
 > auto-reclaims so nothing dangles).
 
@@ -232,19 +237,19 @@ What happens (every slice follows **FIND→CLAIM→RESOLVE→BUILD→VERIFY→FI
 
 ## The skills
 
-Claude Code activates these from intent (or invoke by name, e.g. `factory-plan`):
+Claude Code activates these from intent (or invoke by name, e.g. `af-plan`). There are **four**
+invocable skills:
 
 | Skill | Role |
 |---|---|
-| **factory-wireframe** | One-shot PRD → complete, clickable HTML wireframes, self-audited coverage gate. |
-| **factory-intake** | Extract a candidate-requirement inventory from PRD (behavior) + wireframe (surfaces); reconcile; hand to factory-plan. |
-| **factory-plan** | Human-controlled plan hardening — admit requirements, surface contradictions, run the deterministic `plan_gate`. |
-| **factory-audit** | The separate cold-eyes judgment audit — adversarial challenge, underspecification routing, technical + **test-strategy** sweep, near-dup reconciliation. |
-| **factory-review** | The holistic cold-eyes **panel** (compound-engineering reviewers) at plan-finalization and build-finalization. |
-| **factory-execute** | The build loop — claim a ticket, resolve+pin its checks, build, verify, deploy. |
-| **factory-churn-tickets** | Drive the incomplete-ticket set to done — the "go work unfinished" entry point. |
-| **factory-verify** | The pass/fail gate `factory-execute` runs against **external** signals only. |
-| **factory-memory** | The single policy surface for all Praxis reads/writes; used by the others. |
+| **af-plan** | Explore / research the PRD into a messy candidate plan doc — surface requirements, contradictions, and open questions. |
+| **af-wireframe** | Sibling of af-plan — one-shot PRD → complete, clickable HTML wireframes, self-audited coverage; hands surfaces to af-intake. |
+| **af-intake** | The single write-path: admit + harden requirements in Praxis **and** run all validation — the cold-eyes audit (adversarial challenge, underspecification routing, technical + **test-strategy** sweep, near-dup reconciliation), the planning checks, and the plan-finalization panel. Includes an **amend mode** for adding validation/planning checks to an existing plan. |
+| **af-build** | The build loop — claim a ticket, resolve+pin its checks, build, verify against **external** signals only, deploy — and always run validation + the work-review panel. The "go work unfinished" entry point. |
+
+The Praxis knowledge port is now an internal reference doc, not a skill:
+[**docs/af-memory-policy.md**](/docs/af-memory-policy.md) — the single policy for all Praxis
+reads/writes, cited by the four skills and the hooks.
 
 ## The gate (`hooks/`)
 
@@ -286,7 +291,7 @@ as deferred owned-decisions for morning review. Read it before launching an over
 .claude-plugin/                # plugin.json + marketplace.json (declares the CE dependency)
 METHODOLOGY.md                 # the single canonical statement of how the factory works — read first
 CONSTITUTION.md                # the autonomous-run operating contract
-skills/                        # factory-wireframe / intake / plan / audit / review / execute / churn / verify / memory
+skills/                        # af-wireframe / intake / plan / audit / review / execute / churn / verify / memory
 hooks/
   build_completeness_gate.py   # THE single Stop-hook gate (reads Praxis live, fails closed)
   _praxis.py                   # stdlib-only Praxis HTTP client (the single source of dynamic truth)

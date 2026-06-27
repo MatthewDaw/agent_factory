@@ -164,8 +164,9 @@ both facts (incumbent `active`, newcomer `proposed`, neither rejected) and raise
 in `get_contradictions`** settled by `resolve_contradiction`.
 - *Verified live:* `retry count is 3` then `...7` with `on_conflict="surface"` → both kept (3 active,
   7 proposed), one pending pair, neither rejected; `resolve_contradiction(keep_id=7)` superseded 3.
-- *Consequence:* the earlier rejected-pile workaround is **retired**; `factory-plan`/`factory-memory`
-  now use `on_conflict="surface"` + `get_contradictions` as the surface.
+- *Consequence:* the earlier rejected-pile workaround is **retired**; `af-intake` and the
+  knowledge-port policy (`docs/af-memory-policy.md`) now use `on_conflict="surface"` +
+  `get_contradictions` as the surface.
 
 ### H10. Semantic-contradiction precision — **✅ SHIPPED (merged PR #74; verified 2026-06-25)**
 The semantic detector over-flagged compatible facts (e.g. "knowledge is stored in the KG" vs "code
@@ -174,7 +175,8 @@ is never in the KG"). Tightened in Praxis; the pair now coexists with no contrad
 `praxis/.../matt/semantic_no_conflict_distinct_actors` (different-actors variant, found live in
 the roles cluster — captain-approval vs. coach-immediate) pin it. *Note:* the conflict-checked
 write runs an inline semantic-judge LLM call and can **time out client-side after the write
-succeeds** — consumers must read back rather than blind-retry (handled in `factory-memory`); the
+succeeds** — consumers must read back rather than blind-retry (handled in the knowledge-port
+policy, `docs/af-memory-policy.md`); the
 latency/timeout itself is tracked in **H13**.
 
 ### H11. No "dismiss / keep-both" contradiction resolution — **✅ SHIPPED (merged PR #79)**
@@ -271,7 +273,7 @@ Three operational failures hit live during the dry-run, all on the conflict-chec
 → *Priority:* **H13.1 (timeout)** next after H12 — most disruptive day-to-day. **H13.3
    (membership)** before we rely on durable snapshots (M2). **H13.2 (concurrency)** lowest — the
    local interim below mitigates it.
-→ *Meanwhile (local, in control):* `factory-memory` mandates **serial** conflict-checked writes
+→ *Meanwhile (local, in control):* the knowledge-port policy (`docs/af-memory-policy.md`) mandates **serial** conflict-checked writes
    (never parallel bursts) + **read-back-and-re-add on timeout** (a timeout ≠ failure; the write
    usually committed — read back and only re-add if absent, never blind-retry).
 

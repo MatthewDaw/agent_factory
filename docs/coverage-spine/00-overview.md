@@ -66,12 +66,12 @@ Nothing in the spine cares about existing vs. empty code. A refactor is just a p
 ## Current workstreams
 1. **Planning eval** (this thread) — coverage of a plan reproduced from `docs/inspiration/` vs. the golden. See `03-eval-agent.md`. Lives in `evals/plan_repro/`.
 2. **Validation harness / checks on `../team-app`** — BUILT + wired live
-   (`src/agent_factory/validation_target.py` + `factory-execute`/`factory-verify` wiring + the
-   `factory-add-validation` / `factory-redo-ticket-add-validation` skills; see
+   (`src/agent_factory/validation_target.py` + `af-build` wiring + the
+   `af-intake` add-check amend mode; see
    [`06-validation-harness.md`](06-validation-harness.md)). **Checks live entirely in Praxis**
-   (`category="check"`, `scope="validation"`, `meta.applies_to`/`meta.run`); the skills are the write
-   path. `factory-execute` pulls checks from Praxis + regresses bound tickets, `factory-verify` pulls
-   a ticket's checks from Praxis + runs each `meta.run` as a blocking gate, `build_completeness_gate`
+   (`category="check"`, `scope="validation"`, `meta.applies_to`/`meta.run`); `af-intake` is the write
+   path. `af-build` pulls checks from Praxis + regresses bound tickets, runs each
+   `meta.run` as a blocking gate at verify time, `build_completeness_gate`
    forces the re-pick. Insert a check → ticket regresses → coding agent must make it pass. No file.
 3. **The shared coverage engine** (`evals/plan_repro/coverage.py`) — built once, instantiated by both planning-coverage and validation-coverage. Design: [`05-coverage-engine.md`](05-coverage-engine.md) (per-part sweep + thorough per-part query + targeted adversarial; scales to thousands of insights).
 
@@ -81,4 +81,4 @@ Nothing in the spine cares about existing vs. empty code. A refactor is just a p
 - The golden: live Praxis `prd-team-app` graph (~78 requirements) → extracted to `evals/plan_repro/team-app/golden-features.yaml`.
 
 ## Relevant memories
-`factory-dev-methodology`, `factory-planning-validation-snapshots`, `factory-closed-loop-learning` (in the user's memory dir).
+`factory-dev-methodology`, `af-planning-validation-snapshots`, `factory-closed-loop-learning` (in the user's memory dir).

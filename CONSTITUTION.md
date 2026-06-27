@@ -11,6 +11,14 @@ This file governs **process**, not product design. Read it, read
 **[METHODOLOGY.md](METHODOLOGY.md)** (the single canonical statement of how the factory works), read
 the ledger (`docs/autonomous-progress-ledger.md`), then act.
 
+**Required tooling — compound-engineering.** The **compound-engineering** plugin is a HARD dependency of
+this project (declared in `.claude-plugin/plugin.json` + `marketplace.json`'s
+`allowCrossMarketplaceDependenciesOn`), not an optional add-on. It is required across the planning
+lifecycle: the **front-end** uses `ce-brainstorm` (clarify a rough idea into a real requirements doc) and
+`ce-ideate` (surface adjacent/implied features) in `af-plan`/`af-intake`; the **back-end** uses
+the `ce-*` reviewer agents as the default cold-eyes panel in `af-intake` (plan validation) and
+`af-build` (work review). Skip a compound-engineering step only when explicitly justified, never silently.
+
 **The method in one breath.** State lives in ONE place — **Praxis**. No JSON status files, no on-disk
 locks, no self-set "done" flags. Every unit of work is the same loop:
 **FIND** the next incomplete ticket in scope → **CLAIM** it (a heartbeated lease, not a lock) →
@@ -44,9 +52,9 @@ Concretely, lean on:
 This composes with — it does not replace — the rest of this constitution. The single-decision-maker
 doctrine still holds **per slice**: a workflow *orchestrates* builders and reviewers that each own
 their slice, but exactly one agent decides, edits, writes to Praxis, or commits for any given slice
-(the read-only retrieval sub-agent rule, factory-execute §1a, is unchanged). The gates pair
-naturally with fan-out: the **audit** (factory-audit / §4 step 8b) and the **review** gates
-(`factory-review`, §1 item 2) are exactly where a panel of fanned-out reviewers earns its keep —
+(the read-only retrieval sub-agent rule, af-build, is unchanged). The gates pair
+naturally with fan-out: the **audit** (af-intake / §4 step 8b) and the **review** gates
+(af-intake for the plan, af-build for the work; §1 item 2) are exactly where a panel of fanned-out reviewers earns its keep —
 the gate stays human-controlled (or, unattended, defers per §3), and the workflow *informs* it.
 
 When a pass is non-trivial and you find yourself about to do it solo, stop and ask: *should this be
@@ -63,19 +71,19 @@ Keep iterating until ALL of the following hold:
    (`C:/Users/mattd/Documents/gauntlet/team-app`) and the full test suite passes, with a runnable
    local entry point. The **mechanical test of this is `praxis_incomplete_requirements(prd-team-app)`
    returning empty** — it derives completeness from verified outcomes + staleness, so "done" means
-   every requirement actually passed `factory-verify`, not that the agent believes so. The
+   every requirement actually passed `af-build`'s verify step, not that the agent believes so. The
    build-completeness gate (`hooks/build_completeness_gate.py`) enforces it: the worker cannot stop
    while that query is non-empty. **The environment's derived dependencies** (credentials, API keys,
    services, tooling — from the `techDecisions`) must be provisioned before coding; an unprovisioned
    dependency is just a **failing check** on its ticket, which the same completeness gate refuses to
-   pass (factory-execute §0). And the
+   pass (af-build). And the
    plan is **not done until it is DEPLOYED and the deployment verified** — a hard gate the same
    build-completeness gate enforces — **unless the owner explicitly opted out** of deployment
    (`deployment.required:false` + a recorded reason). The build itself **fans out** (parallel
    worktree-isolated slice builders via a Workflow, §0), never a serial task queue.
 2. **The plan is hardened in Praxis.** Every PRD requirement is an atomic fact in the
    `prd-team-app` snapshot, each with a binary acceptance condition and zero unresolved
-   contradictions. **Finalization is gated by `factory-review`:** the plan is not "done" until a
+   contradictions. **Finalization is gated by `af-intake` (plan) and `af-build` (work):** the plan is not "done" until a
    PLAN-mode review over the finalized `prd-team-app` has **passed (no open findings) or been
    skipped-with-reason**, and the build is not "done" (per item 1) until a WORK-mode review over the
    whole diff has likewise passed or been skipped. A review/audit finding becomes a Praxis
@@ -110,7 +118,7 @@ Build is the default. Harden is an interrupt you service, then return.
 
 - **Never ask a blocking question.** There is no one to answer. The `AskUserQuestion` tool is
   off-limits this run.
-- **Resolve-before-decide order** (from `factory-plan`): (1) the PRD text — if it answers,
+- **Resolve-before-decide order** (from `af-plan`): (1) the PRD text — if it answers,
   use it; (2) mounted knowledge (`general-pool`, `constitution`, prior `prd-*`); (3) a clear
   conventional, low-regret default; (4) only then your own best judgment. At step 3 or 4,
   **record a `praxis_record_episode`** stating the decision + "owner asleep → best-choice
@@ -150,7 +158,7 @@ Each pass is one slice of forward progress. Run this checklist top to bottom:
    **Claim** the chosen ticket (`meta.build_state="in_progress"` + a heartbeated lease) so the gate
    sees this session is actively building it, and heartbeat while you work. There is no status
    manifest — progress is the ticket's live `build_state`/outcome in Praxis, nothing on disk.
-3. **Plan the slice** (factory-plan discipline). *Review leverage is inverse to distance from
+3. **Plan the slice** (af-plan discipline). *Review leverage is inverse to distance from
    execution — a bad requirement spawns thousands of bad lines, a bad plan hundreds, a bad line of
    code just one — so spend the rigor here, on the facts, not on re-reading generated code:*
    - Admit each requirement via `praxis_add_insight(..., source="prd-team-app",
@@ -176,11 +184,11 @@ Each pass is one slice of forward progress. Run this checklist top to bottom:
 4. **Execute.** Build the code in `team-app`, following existing patterns
    (`team_app/*.py`, `tests/test_*.py`). Prefer test-first for behavior-bearing logic. Bulk or
    multi-file reading may be delegated to a disposable **read-only retrieval sub-agent**
-   (factory-execute §1a) to keep your window clear — it reads and digests only; you remain the sole
+   (af-build) to keep your window clear — it reads and digests only; you remain the sole
    agent that edits, writes to Praxis, or commits.
 5. **Verify.** Run `python -m pytest -q` in `team-app`. Red→green. Corrections fire only on a
    real failing signal. Only **automated** acceptance conditions can be verified tonight; any
-   condition tagged **manual** (factory-plan §2b) cannot be confirmed with no human awake — record
+   condition tagged **manual** (af-intake) cannot be confirmed with no human awake — record
    it as a deferred owned decision (`record_episode`) and note it in the ledger for morning review
    rather than self-passing it.
 6. **Compound.** Write back the implementation learning to Praxis with
@@ -190,10 +198,10 @@ Each pass is one slice of forward progress. Run this checklist top to bottom:
    continuing.
 8. **Checkpoint.** Update the ledger (§7), commit the team-app slice (one focused commit),
    re-`save_snapshot("prd-team-app")` when the plan changed.
-8b. **Finalization reviews (`factory-review`).** Finalization — not each slice — is gated by
-   `factory-review`, whose findings land as Praxis tickets/checks the build-completeness gate
+8b. **Finalization reviews.** Finalization — not each slice — is gated by the plan panel in
+   `af-intake` and the work panel in `af-build`, whose findings land as Praxis tickets/checks the build-completeness gate
    enforces: when the **plan is finalized** (audit passed +
-   snapshot, factory-audit §6) auto-run a **PLAN-mode** review over `prd-team-app`; when the **build
+   snapshot, af-intake) auto-run a **PLAN-mode** review over `prd-team-app`; when the **build
    is finished** (the live completeness query over `prd-team-app` returns empty) auto-run a **WORK-mode**
    review over the whole diff. Neither "planning complete" nor "shipped" may end until its review has
    **passed (no open findings) or been skipped-with-reason**. Both are skippable for small work via
@@ -314,7 +322,7 @@ graph + git log, then continue. The ledger is the plan; the graph/commits are th
 
 ## 8. Praxis Operating Rules & Known-Bug Workarounds
 
-Carry the `factory-memory` policy. Specifics that matter tonight:
+Carry the knowledge-port policy (`docs/af-memory-policy.md`). Specifics that matter tonight:
 
 - **Confirm org after any reconnect** (`whoami`). Writes to the wrong org are silent data loss.
 - **Planning writes use `on_conflict="surface"`** so contradictions surface, never auto-resolve.

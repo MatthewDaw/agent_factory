@@ -1,7 +1,7 @@
 """Reproduction: the forced build-completeness gate's UNFILTERED completion target is
 unsatisfiable autonomously, and ``select_build_target`` is the fix that makes it satisfiable.
 
-Context (CONSTITUTION / factory-execute §0b): the autonomous build runs under a forced
+Context (CONSTITUTION / af-build): the autonomous build runs under a forced
 completeness gate that keeps working until ``incompleteCount`` reaches 0 — i.e. until every
 requirement in its completion target has earned a "succeeded" outcome. The Praxis query
 ``incomplete_requirements(project)`` returns ALL active requirements, so if the gate uses

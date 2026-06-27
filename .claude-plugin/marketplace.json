@@ -9,7 +9,7 @@
   "plugins": [
     {
       "name": "agent-factory",
-      "description": "Single-agent plan->execute->verify loop with compounding memory, delivered as Claude Code skills, plus factory-wireframe (one-shot PRD->complete clickable wireframe with an enforced coverage gate).",
+      "description": "Single-agent plan->execute->verify loop with compounding memory, delivered as Claude Code skills, plus af-wireframe (one-shot PRD->complete clickable wireframe with an enforced coverage gate).",
       "author": { "name": "Matt Daw" },
       "source": ".",
       "dependencies": [

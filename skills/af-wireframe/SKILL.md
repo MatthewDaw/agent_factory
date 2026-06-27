@@ -1,5 +1,5 @@
 ---
-name: factory-wireframe
+name: af-wireframe
 description: >
   Turn a PRD into complete, clickable HTML wireframe(s) in one shot, with one rendered screen per
   Praxis surface. Use when the human says "build a wireframe for this PRD", "wireframe this", or
@@ -46,6 +46,13 @@ proves coverage.
 
 # Factory Wireframe
 
+**`af-wireframe` is a sibling output of the explore stage** — the visual counterpart to `af-plan`.
+Where `af-plan` emits a messy text exploration doc, `af-wireframe` emits clickable HTML wireframe(s);
+run it instead of, or alongside, the text doc. Either way the surfaces it produces are **handed to
+`af-intake`**, which binds surface↔requirement edges and admits the plan. This skill consumes those
+bindings back once they exist (and renders against them); before they exist it raises the missing
+surfaces to `af-intake` so they get created.
+
 Produce a **feature-complete, clickable, inert** wireframe from a PRD with a single instruction.
 Completeness is the skill's job, and it is measured against **Praxis, the single source of dynamic
 truth** — not a local checklist. Every screen the wireframe must show exists as a **surface** bound
@@ -55,7 +62,7 @@ bindings back live.
 
 ## State rules (non-negotiable)
 
-- **Praxis holds the surfaces, requirements, and bindings.** `factory-intake` produced the
+- **Praxis holds the surfaces, requirements, and bindings.** `af-intake` produced the
   surface↔requirement bindings (the `renders` edges) this skill consumes. You never invent a
   parallel manifest of "what screens exist" — you query Praxis.
 - **Praxis is a HARD dependency, fail-CLOSED.** If Praxis is unreachable/unauthenticated, STOP —
@@ -64,7 +71,7 @@ bindings back live.
   checklist, no status file. It does not record completion in JSON. The only durable record of "this
   surface is rendered" is in Praxis (a satisfied surface binding / a requirement that is no longer
   incomplete).
-- **You touch state through `factory-memory`** (the knowledge port). Reads use the Praxis surface
+- **You touch state through the Praxis knowledge-port policy** (`docs/af-memory-policy.md`). Reads use the Praxis surface
   tools (`surface_coverage`, `list_surface_bindings`, `requirements_for_surface`,
   `incomplete_requirements`); the rendered-surface outcome you write goes through the same port,
   using the canonical meta keys from `docs/factory-state-contract.md`. Hook-level callers use
@@ -106,7 +113,7 @@ and it lives in Praxis, not in a file you author.
    must close.
 3. Cross-check the PRD docs against the bound surfaces. If a doc clearly implies a screen that has
    **no surface** in Praxis, that is a missing binding, not a private note: surface it back to the
-   human / `factory-intake` so the binding gets created — the wireframe's job is to render the
+   human / `af-intake` so the binding gets created — the wireframe's job is to render the
    graph's surfaces completely, not to grow a shadow inventory beside it.
 
 Always confirm the graph covers these categories (a missing surface here is the usual "you missed
@@ -155,7 +162,7 @@ Coverage is proven by reading the **graph** back, not a local checklist:
    A surface with no rendered screen is, by definition, an **incomplete requirement** — fix it.
 3. Re-run `incomplete_requirements("<project>")` (**BARE project name**). Anything a rendered surface
    now satisfies should no longer dangle; record each rendered-surface outcome through
-   `factory-memory` / `record_outcome(cid, success=True)` so the graph reflects what is built. **Do
+   the knowledge-port policy (`docs/af-memory-policy.md`) / `record_outcome(cid, success=True)` so the graph reflects what is built. **Do
    not write any local file to mark this.**
 4. Produce a **coverage table** mapping each surface (and the requirement ids it renders) → the
    screen it appears on, including implied states. If a surface is intentionally out (post-MVP not
@@ -198,5 +205,5 @@ optimism) decide done.
 
 When a human correction reveals a class of miss (a forgotten state, a persona split, a missing
 surface), fix it at the source: get the missing **surface/binding into Praxis** (via
-`factory-intake`) so the gap is a first-class incomplete requirement next time, and record a
-`factory-memory` learning. The next wireframe starts from a stricter graph, not a stricter file.
+`af-intake`) so the gap is a first-class incomplete requirement next time, and record a
+learning via the knowledge-port policy (`docs/af-memory-policy.md`). The next wireframe starts from a stricter graph, not a stricter file.

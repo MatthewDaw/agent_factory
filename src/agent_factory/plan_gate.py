@@ -1,4 +1,4 @@
-"""The plan done-gate: a deterministic verifier the factory-plan skill runs before
+"""The plan done-gate: a deterministic verifier the af-plan skill runs before
 admitting a PRD (Milestone 1a).
 
 The skill (an LLM) drafts each requirement and tags it with the concepts it

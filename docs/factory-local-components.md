@@ -16,7 +16,7 @@
 > return a compact digest, so the parent's window never eats the raw noise. That is a context
 > firewall, not a crew — it reads and summarizes, it never decides, edits, writes to Praxis, or
 > commits, and it is never chained into a decision. A crew that divides *decision/domain* work or
-> writes in parallel remains out. (Spec: `factory-execute` §1a.)
+> writes in parallel remains out. (Spec: `af-build`.)
 
 ---
 
@@ -88,7 +88,7 @@ Optionally deploy + route monitoring signals back into B1.
 
 Not a crew — a controller around the one agent, with one permitted helper: a disposable,
 read-only **retrieval sub-agent** the controller calls to read/search/summarize large surfaces and
-return a compact digest (see the carve-out at the top + `factory-execute` §1a). It is a context
+return a compact digest (see the carve-out at the top + `af-build`). It is a context
 firewall, never a second decision-maker.
 
 - **Phase controller / task loop:** walk the DAG, dispatch tasks, gate transitions.
@@ -99,7 +99,7 @@ firewall, never a second decision-maker.
   **summarize, don't drop** at **~50–60% fill** (the lower band leaves recovery headroom). The
   compaction artifact has fixed fields — end goal · current approach · steps completed · dead-ends
   & why they failed · key file locations + roles · next step + acceptance condition (see
-  `factory-execute` §2). This is the local realization of the tiered hot/warm/cold pattern *over*
+  `af-build`). This is the local realization of the tiered hot/warm/cold pattern *over*
   Praxis retrieval.
 - **Checkpoint / replay:** serialize loop state to external storage (and snapshot the Praxis
   graph at phase boundaries via the port).

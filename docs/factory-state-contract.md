@@ -13,11 +13,20 @@ that reads Praxis live.
 
 - **JSON is STATIC CONFIG ONLY.** No `json.dump` of build/validation/review/audit/preflight state.
   The `.factory/*.json` manifest pattern is being purged. These modules write NO local state files.
-- **Checks are declarative + read-only during builds.** A check owns its own applicability
-  predicate (`meta.applies_to` tag / bound surface). A ticket carries identity (tags, surfaces,
-  semantics) but NEVER an authored list of its checks.
-- **Which checks apply is a QUERY**, resolved fresh at ticket start (tag union surface against
-  active checks). Never pre-bound onto the ticket.
+- **Two-tier validation.** A **validation REQUIREMENT** (`category="check"`) is an abstract
+  *"what must be proven"* fact — declarative, read-only during builds, owning its own applicability
+  predicate (`meta.applies_to` tag / bound surface). A **VALIDATION** is a concrete, executable
+  instance the worker AUTHORS to faithfully COVER the resolved requirements (a `run` command whose
+  exit code is the signal, declaring the requirement ids it `covers`). A ticket carries identity
+  (tags, surfaces, semantics) but NEVER an authored requirement list.
+- **Which requirements apply is a QUERY**, resolved fresh at ticket start (tag union surface against
+  active requirements). Never pre-bound onto the ticket. The worker then synthesizes covering
+  validations; a ticket is done iff coverage is complete AND every validation passes.
+- **A build run is a WHOLE-SET, scope-bearing commitment.** At run start af-build stamps a
+  `run_owner`/`run_at` marker on every in-scope incomplete ticket; the single Stop gate enforces the
+  entire marked set until each is `finished` (or terminally `blocked`), closing the between-ticket
+  window. A non-coverable / credential-only ticket is `blocked` (surfaced for owner action, excluded
+  from churn), never a silent forever-deadlock.
 
 ## Fail-closed rule
 
@@ -47,33 +56,60 @@ without importing praxis) → `Authorization: Bearer`. If no credential is avail
 
 ## Canonical meta keys (on the requirement / ticket node)
 
-| Key                  | Type                              | Meaning                                                        |
-|----------------------|-----------------------------------|----------------------------------------------------------------|
-| `build_state`        | `"incomplete"｜"in_progress"｜"finished"` | The ticket's lifecycle state. Absent ≡ `incomplete`.   |
-| `claim_owner`        | `str`                             | Session/agent id holding the lease.                            |
-| `claim_at`           | `float` (epoch seconds)           | When this owner first claimed.                                 |
-| `claim_heartbeat_at` | `float` (epoch seconds)           | Last liveness bump.                                            |
-| `claim_lease_ttl`    | `int` (seconds)                   | Lease is STALE when `now - claim_heartbeat_at > claim_lease_ttl`. |
-| `pinned_checks`      | `list[{check_id, passed, ran_at}]`| THIS pass's completion contract (resolved set, see below).     |
+| Key                    | Type                              | Meaning                                                        |
+|------------------------|-----------------------------------|----------------------------------------------------------------|
+| `build_state`          | `"incomplete"｜"in_progress"｜"finished"｜"blocked"` | Lifecycle state. Absent ≡ `incomplete`.    |
+| `depends_on`           | `list[str]`                       | Prerequisite ticket ids (fact id or requirement id) that must be `finished` before this ticket is claimable. |
+| `block_reason`         | `str`                             | Why a ticket is `blocked` (surfaced; needs owner action).      |
+| `claim_owner`          | `str`                             | Session/agent id holding the lease.                            |
+| `claim_at`             | `float` (epoch seconds)           | When this owner first claimed.                                 |
+| `claim_heartbeat_at`   | `float` (epoch seconds)           | Last liveness bump.                                            |
+| `claim_lease_ttl`      | `int` (seconds)                   | Lease is STALE when `now - claim_heartbeat_at > claim_lease_ttl`. |
+| `required_validations` | `list[str]`                       | Resolved requirement ids — THIS pass's coverage contract.      |
+| `pinned_checks`        | `list[{validation_id, covers, run, passed, ran_at}]` | The synthesized VALIDATIONS — the eval.     |
+| `run_owner`            | `str`                             | Session id of the active whole-set build run this ticket is in. |
+| `run_at`               | `float` (epoch seconds)           | Run-marker heartbeat; run is STALE when `now - run_at > DEFAULT_RUN_TTL_S`. |
+| `run_scope`            | `str`                             | Human label of the run's scope (for the gate's report).        |
 
-`pinned_checks` entry: `{ "check_id": str, "passed": bool｜null, "ran_at": float｜null }`
-(null = not yet run). These key names align with the Praxis server's own `claim` view
-(`build_state`, `claim_owner`, `claim_heartbeat_at`, `lease_live`) and lease semantics, so the
-server-derived `/requirements/incomplete` view and these client writes agree.
+`pinned_checks` entry: `{ "validation_id": str, "covers": list[str], "run": str,
+"passed": bool｜null, "ran_at": float｜null }` (null = not yet run). The key name is retained for
+back-compat with the Praxis server's `claim` view and the eval harness, but entries now describe
+synthesized VALIDATIONS, not raw checks. `build_state`/`claim_owner`/`claim_heartbeat_at`/`lease_live`
+align with the server's `claim` view, so `/requirements/incomplete` and these client writes agree.
 
 ## Per-ticket lifecycle
 
-1. **start** — `claim` (incomplete → in_progress, stamp lease); then `resolve_checks` (the QUERY);
-   then `pin_checks` which TRUNCATES any prior `pinned_checks` and writes the FRESH resolved set as
-   this pass's completion contract. (`start_ticket` does all three.)
-2. **build + validate** — run each pinned check; record each pass ON THE TICKET NODE via
-   `record_check_pass` (never on the check fact). `heartbeat` periodically to keep the lease live.
-3. **finished IFF** `all_checks_passed` (≥1 pinned check, all passed) → `release(state="finished")`.
-   Yielding cleanly → `release(state="incomplete")`.
+0. **open the run** — resolve scope → in-scope incomplete ticket ids; `stamp_run(cids, owner, scope)`
+   marks the whole set so the gate enforces it as one run. `refresh_run` at each ticket boundary;
+   `clear_run` at run end.
+1. **find + start (ONE at a time)** — pop the SINGLE dependency-ready front via
+   `next_ready_ticket(incomplete)` (not finished, not blocked, every `depends_on` prerequisite finished);
+   then `claim` (incomplete → in_progress, stamp lease); then `resolve_validation_requirements` (the QUERY);
+   then `pin_requirements` which TRUNCATES any prior validations and writes the resolved requirement ids as
+   the coverage contract (`required_validations`). (`start_ticket` does claim + resolve + pin.) The worker
+   ships this one ticket end-to-end before it looks at another — the run marker + gate guarantee the rest of
+   the scope gets done; attention stays on one ticket.
+2. **synthesize + build** — author concrete validations that faithfully COVER every requirement
+   (`pin_validations`, entries declaring `covers` + `run`); `coverage_gap` must be empty. Then do the
+   work to satisfy the acceptance condition. `heartbeat` periodically to keep the lease + run marker live.
+3. **verify** — run each pinned validation; record each pass ON THE TICKET NODE via
+   `record_validation_pass` (never on the requirement fact).
+4. **finished IFF** `all_validations_passed` (coverage complete, ≥1 validation, all passed) →
+   `release(state="finished")` (also clears this ticket's run marker). Yielding cleanly →
+   `release(state="incomplete")` (run marker KEPT — the gate keeps it in scope). A non-coverable /
+   credential-only / unsatisfiable ticket → `block(state="blocked")` (surfaced, excluded from churn).
+
+**Doneness is THE EVAL, not a count.** A ticket is done iff coverage is complete and its synthesized
+validations (the eval) all pass, recorded as the hard enum `build_state="finished"` — the single
+authoritative completion signal. The `record_outcome` success/failure **count** is a trust/utility
+weighting only and is **never** the doneness criterion; nothing in the factory may read a success count
+as "done." The one Stop gate honors `build_state="finished"`/`"blocked"` directly (it skips/surfaces
+them even if a count-derived list still lists them).
 
 **Claiming is a LEASE, not a lock.** A stale lease (heartbeat older than ttl) is auto-reclaimable so
-nothing dangles. "A build run is active" ≡ this session owns a live, unfinished `in_progress` claim,
-read from Praxis — NOT a local file flag.
+nothing dangles. **"A build run is active"** ≡ this session owns a live `in_progress` claim **OR** a
+non-stale whole-set `run_owner` marker scopes work to it — read from Praxis, NOT a local file flag. The
+run marker is what lets the gate enforce the *whole scoped set*, not just a currently-held ticket.
 
 **Race-tolerance (v1).** `claim` is a read-modify-write over `patch_meta` (PATCH `/candidates/{cid}`,
 which MERGES meta). No server-side CAS is assumed. Two agents can both claim a free/stale ticket — a
@@ -82,16 +118,35 @@ rare, HARMLESS double-claim (idempotent wasted work), not corruption.
 **Note on key deletion.** `patch_meta` MERGES (it cannot delete keys), so `release` NULLs the lease
 keys rather than removing them; `_lease_live` treats null heartbeat/ttl as not-live.
 
-## Check resolution is a query (tag union surface)
+## Requirement resolution is a query (tag union surface)
 
-`resolve_checks(ticket, project)` returns the de-duplicated union of:
-- **tag match** — active `category="check"` facts whose `meta.applies_to` (array, supports `"*"`)
-  contains any of the ticket's tags (`meta.tags` / `meta.applies_to`); via `facts_by`.
-- **surface match** — active checks bound (via the `renders` edge) to any surface the ticket renders
-  (`meta.surfaces` / `meta.screen_ids`); via `/surfaces/{screen}/checks`.
+`resolve_validation_requirements(ticket, project, scope=None)` (alias `resolve_checks`). The `scope`
+arg is the ONE seam between the two callers — everything downstream (pin / coverage / pass) is identical:
 
-A third **semantic** lane (embedding the check predicate against the ticket text) is a documented
+- **`scope="validation"`** (af-build PER-TICKET; `start_ticket` passes this) — the de-duplicated union of:
+  - **tag match** — active `category="check"` facts whose `meta.applies_to` (array, `"*"` wildcard)
+    contains any of the ticket's tags (`meta.tags` / `meta.applies_to`); via `facts_by` — then filtered
+    to validation-scope checks.
+  - **surface match** — checks bound (via the `renders` edge) to any surface the ticket renders; via
+    `/surfaces/{screen}/checks`.
+- **`scope="planning"`** (af-intake WHOLE-PLAN gate, B3) — planning lenses are GLOBAL considerations
+  (`applies_when`, NOT tag/surface-bound), so this returns the ENTIRE active `scope="planning"` checklist
+  regardless of the subject's tags/surfaces. `ticket` is the plan-anchor the coverage contract hangs on.
+  af-intake then runs the SAME two-tier pass (`pin_requirements` → synthesize + `pin_validations` →
+  `coverage_gap` empty + `all_validations_passed`) over the plan's Praxis facts — making lens-coverage a
+  hard gate, identical in shape to the build-side validation and to the eval's depth scorer.
+- **`scope=None`** (default, back-compat) — tag union surface across all check scopes.
+
+A third **semantic** lane (embedding the requirement predicate against the ticket text) is a documented
 TODO hook, intentionally not implemented in v1.
+
+## Coverage is the contract; validations are the eval
+
+The resolved requirements are PINNED as `required_validations`. The worker then synthesizes concrete
+validations (`pin_validations`), each declaring the requirement ids it `covers`. `coverage_gap(ticket)`
+returns the requirement ids not yet covered by any validation — it MUST be empty for the ticket to
+finish. `all_validations_passed` is the single doneness predicate: coverage complete, ≥1 validation, all
+passed. A requirement that cannot be turned into a runnable validation is a `block`, not a fake pass.
 
 ## Public API — `hooks/_praxis.py`
 
@@ -116,19 +171,45 @@ Every method raises `PraxisUnreachable` on any connection/HTTP/auth error.
 
 ```python
 # canonical meta-key constants
-M_BUILD_STATE, M_CLAIM_OWNER, M_CLAIM_AT, M_CLAIM_HEARTBEAT_AT, M_CLAIM_LEASE_TTL, M_PINNED_CHECKS
-DEFAULT_LEASE_TTL_S = 900
+M_BUILD_STATE, M_BLOCK_REASON, M_CLAIM_OWNER, M_CLAIM_AT, M_CLAIM_HEARTBEAT_AT, M_CLAIM_LEASE_TTL,
+M_REQUIRED_VALIDATIONS, M_PINNED_CHECKS, M_RUN_OWNER, M_RUN_AT, M_RUN_SCOPE
+DEFAULT_LEASE_TTL_S = 900     # per-ticket claim lease
+DEFAULT_RUN_TTL_S   = 3600    # whole-set run marker (refreshed at each ticket boundary)
 
-resolve_checks(ticket, project: str = "") -> list[dict]      # the QUERY (tag ∪ surface)
-pin_checks(cid: str, checks: list) -> dict                   # truncate + pin fresh contract
-record_check_pass(cid: str, check_id: str, passed: bool, ran_at: float|None = None) -> dict
-all_checks_passed(ticket) -> bool                            # ≥1 pinned AND all passed
+# --- requirements (the QUERY) + the coverage contract ---
+resolve_validation_requirements(ticket, project="", scope=None) -> list[dict]  # alias: resolve_checks
+    # scope="validation" (af-build, per-ticket tag∪surface) | "planning" (af-intake, whole checklist) | None
+pin_requirements(cid: str, requirements: list) -> dict       # truncate validations + pin coverage contract
 
-claim(cid: str, owner: str, ttl: int = 900) -> bool          # incomplete -> in_progress (race-tolerant)
-heartbeat(cid: str, owner: str) -> bool                      # bump iff still holding a live lease
-release(cid: str, owner: str, state: str) -> bool            # state in {"finished","incomplete"}
+# --- worker-synthesized validations (the eval) ---
+pin_validations(cid: str, validations: list) -> dict         # entries: {validation_id, covers:[id], run}
+record_validation_pass(cid, validation_id, passed, ran_at=None) -> dict    # alias: record_check_pass
+coverage_gap(ticket) -> list[str]                            # requirement ids not yet covered ([] == ok)
+all_validations_passed(ticket) -> bool                       # coverage complete + ≥1 + all passed
+                                                             # (alias: all_checks_passed)
+# pin_checks(cid, checks) -> dict   # back-compat shim: pins requirements + trivial 1:1 validations
 
-start_ticket(cid: str, owner: str, project: str = "", ttl: int = 900) -> list[dict]|None  # claim+resolve+pin
+# --- dependency readiness (the FIND queue front) ---
+deps_of(ticket) -> list[str]                                 # this ticket's depends_on prerequisite ids
+unfinished_ids(items: list[dict]) -> set[str]               # ids of every not-finished ticket in a set
+is_ready(item: dict, unfinished: set[str]) -> bool          # no depends_on still unfinished
+pending_deps(item: dict, unfinished: set[str]) -> list[str] # which prerequisites are still unfinished
+ready_tickets(items: list[dict]) -> list[dict]              # claimable NOW: not finished/blocked + ready
+next_ready_ticket(items: list[dict]) -> dict|None          # pop the SINGLE queue front (one-at-a-time)
+
+# --- claim / lease / lifecycle ---
+claim(cid, owner, ttl=900) -> bool                           # incomplete -> in_progress (race-tolerant)
+heartbeat(cid, owner) -> bool                                # bump lease (+ run marker) iff still held
+release(cid, owner, state) -> bool                           # state in {"finished","incomplete"}
+block(cid, owner, reason) -> bool                            # -> build_state="blocked" (surfaced, no churn)
+
+# --- whole-set run marker (scope-bearing arming signal) ---
+stamp_run(cids: list[str], owner, scope="all") -> int        # mark in-scope incomplete tickets at run start
+refresh_run(cids: list[str], owner) -> int                   # bump run_at at each ticket boundary
+clear_run(cids: list[str], owner) -> int                     # end the run (scoped set done / aborted)
+run_live(meta: dict, now=None) -> bool                       # non-stale run marker present?
+
+start_ticket(cid, owner, project="", ttl=900) -> list[dict]|None  # claim + resolve + pin coverage contract
 ```
 
 `ticket` arguments accept either a fact id (`str`) or an already-fetched fact (`dict`). All Praxis

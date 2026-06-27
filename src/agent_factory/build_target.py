@@ -1,7 +1,7 @@
 """Deterministic build-target selector — bounds what the forced build gate must finish.
 
 The autonomous build runs under a forced completeness gate (CONSTITUTION /
-factory-execute §0b): it keeps working until every *targeted* requirement reaches a
+af-build): it keeps working until every *targeted* requirement reaches a
 "succeeded" outcome. But the Praxis completeness query ``incomplete_requirements(project)``
 returns ALL active requirements, which is the wrong target for an automated gate:
 

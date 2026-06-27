@@ -9,7 +9,7 @@ each row's and column's identity into the text so siblings stay distinct.
 Scope and limits:
 - This is the *local* half of the H6 fix. It reduces distillation loss (loss point A).
 - It cannot fix the server-side over-merge (loss point B) — pair it with the
-  rejected-pile audit in the ``factory-memory`` skill, which is the safety net.
+  rejected-pile audit in the knowledge-port policy (``docs/af-memory-policy.md``), which is the safety net.
 - Detection is deliberately conservative: prefer leaving prose alone (returned as
   ``residual_prose``) over false-positiving a list into fragmented facts.
 """

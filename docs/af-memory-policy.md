@@ -1,14 +1,10 @@
----
-name: factory-memory
-description: >
-  The single policy surface for all Praxis knowledge-graph access in the agent factory
-  (the "knowledge port" as policy). Use whenever the factory reads from or writes to
-  Praxis — claiming/building/finishing a ticket, resolving which checks apply, retrieving
-  grounding context, or writing back a confirmed learning. Encodes the ticket lifecycle
-  (incomplete/in_progress/finished) + lease claim, check-resolution-as-a-query, pins and
-  passes recorded on the ticket node, the fail-closed Praxis dependency, which MCP tool to
-  use for learnings, and the tabular ingestion-integrity audit.
----
+# Praxis knowledge-port policy
+
+This is the factory's **internal reference** for all Praxis knowledge-graph access — the single
+"knowledge port" as policy. It is **not** an invocable skill; it is the document the `af-*` skills
+(`af-plan`, `af-intake`, `af-build`, `af-wireframe`) and the plugin hooks cite whenever they read
+from or write to Praxis. It encodes which MCP tool to use, the tabular ingestion-integrity audit,
+tenancy via snapshots/mounts, the ticket/check state model, and the write-back rules.
 
 ## How work flows (this factory's methodology — read first)
 
@@ -38,10 +34,9 @@ Praxis is a HARD dependency: if it is unreachable the factory STOPS (the gate bl
 on a guess. The single Stop gate (build_completeness) enforces this loop: it blocks the turn from ending
 while you hold an unfinished claim or scoped incomplete tickets remain.
 
-In this skill: factory-memory is the knowledge-port policy — it defines HOW every step above touches
-Praxis. It owns the canonical meta keys and lifecycle verbs the plugin uses to FIND/CLAIM/RESOLVE/VERIFY/
-FINISH (§1), the fail-closed Praxis dependency, and the durable-knowledge write-back rules (§2–§7) for the
-learnings the loop produces.
+This policy is the knowledge-port: it defines HOW every step above touches Praxis. It owns the canonical
+meta keys and lifecycle verbs the plugin uses to FIND/CLAIM/RESOLVE/VERIFY/FINISH (§1), the fail-closed
+Praxis dependency, and the durable-knowledge write-back rules (§2–§7) for the learnings the loop produces.
 
 # Factory Memory Policy
 
@@ -50,7 +45,7 @@ and the outcomes/state that say what is built and what passed. Code lives in git
 configuration lives in JSON. Everything *about what is built / claimed / passed* lives in
 Praxis and nowhere else.
 
-This skill is the one place that decides *how* the factory touches memory. Other skills and
+This document is the one place that decides *how* the factory touches memory. The `af-*` skills and
 the plugin hooks follow these rules; they do not invent ad-hoc `praxis_*` conventions.
 
 Two distinct surfaces touch Praxis, and they must not be confused:

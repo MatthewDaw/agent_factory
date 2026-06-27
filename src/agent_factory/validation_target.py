@@ -18,9 +18,10 @@ The forcing loop this enables:
 
 This module is the **deterministic core**: bind checks to requirements and decide which
 requirements are validation-incomplete. The Praxis writes (regress / record pass) and running
-the check command are the skill's job (factory-verify / factory-execute); they consume this.
+the check command are the skill's job (af-build); they consume this.
 
-Pure: checks come in as Praxis fact dicts (the skill queries Praxis via factory-memory); this
+Pure: checks come in as Praxis fact dicts (the skill queries Praxis via the knowledge-port
+policy, docs/af-memory-policy.md); this
 module makes no Praxis calls and no file I/O.
 """
 
