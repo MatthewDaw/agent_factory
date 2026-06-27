@@ -86,6 +86,15 @@ def main() -> None:
         _allow()
     cwd = data.get("cwd") or os.getcwd()
 
+    # Defer (allow the stop) while real Claude subagents / a background Workflow are running — the
+    # supervisor is legitimately yielding to wait for its fanned-out work (CONSTITUTION §0).
+    try:
+        from _gate_common import subagents_active
+        if subagents_active(data, cwd):
+            _allow()
+    except Exception:
+        pass
+
     manifest_path = os.path.join(cwd, ".factory", "review-status.json")
     if not os.path.isfile(manifest_path):
         _allow()  # not a review surface

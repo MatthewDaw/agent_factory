@@ -120,6 +120,16 @@ crew that splits the decision for a single slice across agents. Re-query
 `praxis_incomplete_requirements` and re-partition after each fan-out batch lands, same as the serial
 loop.
 
+**Yielding to a running workflow (so the gates don't kick you back to work).** When you launch a
+background Workflow and intend to *wait* for it, record it so the Stop gates **defer** instead of
+forcing you to keep working: write `<project>/.factory/awaiting-subagents.json` =
+`{"workflows": [{"taskId": "<id>", "outputPath": "<the output-file path the Workflow tool
+returned>"}]}`. While that workflow runs, every gate stands down — and it's liveness-verified, not a
+free pass: the gate confirms the workflow is genuinely still running (its output file stays empty
+until it completes). When the workflow finishes, **delete the marker**, fold in its results,
+`praxis_record_outcome` per verified slice, re-query / re-partition, and the gates resume enforcing.
+Never leave the marker behind once the work is done.
+
 ## 0c. Work-review (auto, the ship gate)
 
 Once the build-completeness gate flips the manifest to **`done`** (build **FINISHED** — the build
