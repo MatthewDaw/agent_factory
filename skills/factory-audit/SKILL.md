@@ -40,6 +40,14 @@ race/ordering, and **cross-requirement gap** (the case that falls between two re
 **rigorous** mode, each gap-lens must explicitly **fire-or-pass** per requirement: `failure-modes`,
 `security`, `data-lifecycle`, `rollback`, `who-pays`.
 
+**Evaluate the lenses by BATCH, not per-requirement (stop-sooner).** Take ONE lens and sweep it
+across ALL requirements in a single pass — five sweeps total — recording fire/pass per requirement,
+rather than re-deriving all five lenses for each requirement (5×N separate judgments, the dominant
+cost on a large plan). The manifest still records per-requirement results and the gate is unchanged;
+batching only collapses the turn count. For a large plan, **fan the five lens-sweeps out as a
+Workflow** (one builder per lens). The same batch-by-dimension discipline applies to the technical
+sweep (Step 3) and the test-strategy derivation (Step 3a).
+
 A challenge isn't done until it's **closed** — one of:
 - **resolved** — the plan changed (edit/add a requirement via factory-plan; record the resolution),
 - **dismissed** — the challenge doesn't hold (record *why* — a non-empty reason),
@@ -76,6 +84,26 @@ This is fully consistent with the incremental path's `on_conflict="surface"` (fa
 surface keeps both facts pending for the human; here the audit is the cold-eyes actor that *acts on*
 the overlap. After any `reject_fact` or `edit_fact`, the `prd-<project>` snapshot must be re-saved or
 the durable plan still carries the redundancy.
+
+### Step 1b — Pull the planning checklist from Praxis (data-driven lenses)
+
+The fixed gap-lenses above are the built-in **floor**; the **extensible** lenses live in Praxis. Pull
+the **planning checklist** — the active `category="check"`, `scope="planning"` facts (the
+`planning-checklist`, mounted read-only via `factory-memory`; build them with
+`validation_target.checks_from_facts`) — and treat each as a consideration the audit must close for
+THIS plan. For each check, respect `meta.applies_when` (skip a lens whose condition this product
+doesn't meet — and record *why*; surface an ambiguous one rather than silently skipping it), address
+it across the requirements it bears on, and record the outcome in the manifest `checks[]`:
+
+```json
+{"id": "<check_id>", "criterion": "<text>", "angle": "<meta.angle>",
+ "status": "resolved|dismissed|deferred", "resolution": "<how it was addressed>"}
+```
+
+The Stop-hook gate enforces **every `checks[]` entry is closed-with-evidence** (`checklist_gate`), so a
+lens added to Praxis via **`factory-add-planning-check`** is enforced on the next plan **with no code
+change** — the data-driven successor to the hard-coded `gap_lenses`. *(Nothing about which lenses
+exist lives in this skill or any file — only how to pull them from Praxis and how to apply them.)*
 
 ## Step 2 — Route underspecification (research / default / ask / defer)
 
@@ -185,6 +213,9 @@ from ending** (so you can't `save_snapshot` and call it hardened) until ALL hold
   or explicitly kept-as-distinct with a recorded rationale — and the `prd-<project>` snapshot re-saved
   (a free-text annotation alone does NOT close it);
 - rigorous mode: every gap-lens logged for every requirement;
+- every **Praxis-sourced planning check** in `checks[]` (Step 1b) is closed-with-evidence (status
+  resolved / dismissed / deferred + a non-empty resolution) — the data-driven planning lenses,
+  enforced by `checklist_gate`;
 - the **technical decisions** are complete for this system: `techDecisions` is non-empty and every
   entry is closed (resolved / deferred-with-reason / na-with-reason), AND the independent
   `techDecisionsCritic` ran and signed off with nothing missing (`passes: true`, `missingFound: []`);
@@ -210,6 +241,11 @@ from ending** (so you can't `save_snapshot` and call it hardened) until ALL hold
       "gap_lenses": {"failure-modes": "fired", "security": "pass",
                      "data-lifecycle": "pass", "rollback": "pass", "who-pays": "pass"}
     }
+  ],
+  "checks": [
+    // Praxis-sourced planning lenses (Step 1b), each closed-with-evidence; gate enforces via checklist_gate
+    {"id": "auth-credential-recovery", "criterion": "any app with accounts needs a password-reset flow",
+     "angle": "auth", "status": "resolved", "resolution": "added R-pwd-reset (emailed single-use token)"}
   ],
   "techDecisions": [
     {"dimension": "auth", "decision": "session cookie + email magic-link; roles athlete/captain/coach", "source": "PRD §5 + default", "status": "resolved"},
@@ -252,6 +288,12 @@ value cold-eyes pass sits on the plan, where one bad requirement is cheapest to 
 `review_gate` (`hooks/review_gate.py`, armed by `.factory/review-status.json`) then **blocks
 'planning complete' from ending** until the review is either **done with no open findings** or
 **skipped-with-reason** — never silently.
+
+**Sanctioned skip (stop-sooner lever).** When `FACTORY_SKIP_PLAN_REVIEW` is set (an eval /
+planning-only / quick run that explicitly opts out of the cold-eyes plan pass), the arming step
+writes the review manifest as a recorded **skip** (`status:"skipped"`, `forceSkip:true`, a reason).
+In that case **do NOT convene the panel** — the gate passes on the recorded skip. Use it only for
+runs that deliberately forgo the plan review; a normal run still runs (or size-skips) it below.
 
 Mode-aware, like the rest of this skill:
 - **Attended:** run the review as the panel and present its findings as **one batched review**

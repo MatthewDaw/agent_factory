@@ -67,6 +67,21 @@ using each one's plan tags, the tier (`meta.scope` ∈ {`mvp`, `post-mvp`}) and 
 - **needs_triage** (missing/unrecognized tier or verify) — **surface loudly**: a mis-tagged
   requirement must NOT be silently auto-built. Routing it here forces a human to fix the tag.
 
+**Validation checks — live, from Praxis (the fail→regress trigger).** The checks live in the
+**validation graph** (`category="check"`, `scope="validation"`), each carrying `meta.applies_to` (a
+requirement id OR a class tag like `auth`) and `meta.run` (the command). **Before computing the build
+target each run, pull them from Praxis:** query the active validation checks (via `factory-memory`),
+build them with `validation_target.checks_from_facts`, `resolve_bindings` against the plan's
+requirements (class tags from `meta.tags`), and `select_validation_incomplete`
+(`src/agent_factory/validation_target.py`). For every ticket bound to a check it has **not passed
+this build** that currently shows complete, call **`praxis_record_outcome(req, "failed")`** so it
+**regresses** and re-enters `incomplete_requirements`. That is the trigger: inserting a check in
+Praxis forces the matching ticket(s) back into the build set with the new rule attached, and
+`factory-verify` then runs the check's `meta.run` command as a blocking gate (the ticket can't
+re-complete until it passes). Surface any `unbound_checks` (an `applies_to` that matched nothing — a
+typo) loudly. Do this **first**, so the regressed tickets are counted by the completeness query below.
+Nothing about *what* is tested lives in this skill or any file — only *how* to pull it from Praxis.
+
 Run the build as a forced loop:
 1. At build start, query `praxis_incomplete_requirements(prd-<project>)`, run the result (joined with
    the plan's tier/verify tags) through `select_build_target`, and write

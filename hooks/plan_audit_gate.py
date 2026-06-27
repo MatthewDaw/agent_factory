@@ -107,19 +107,70 @@ def _plan_gate_misses(man):
     return [f"plan_gate: {rsn.message}" for rsn in verdict.reasons], True
 
 
+def _checklist_misses(man):
+    """Closure of the Praxis-sourced planning checklist the skill wrote into the manifest.
+
+    Data-driven: the skill pulls the applicable checks from the Praxis `planning` checklist and
+    records each in the manifest's `checks` array; this enforces every one is closed-with-
+    evidence (the de-hardcoded successor to the fixed GAP_LENSES). ADDITIVE + non-breaking — an
+    absent/empty `checks` block returns no misses, so behavior is unchanged until the skill
+    populates it. Returns the list of unmet-check messages."""
+    checks = man.get("checks") or []
+    if not checks:
+        return []
+    plugin_root = os.environ.get("CLAUDE_PLUGIN_ROOT")
+    if plugin_root:
+        sys.path.insert(0, os.path.join(plugin_root, "src"))
+    try:
+        from agent_factory.checklist_gate import Check, evaluate_checklist
+    except Exception:
+        # Inline fallback so the hook still enforces closure if the package isn't importable.
+        misses = []
+        for c in checks:
+            st = str(c.get("status", "open")).strip().lower()
+            if st not in {"resolved", "dismissed", "deferred"}:
+                misses.append(f"checklist: check '{c.get('id', '?')}': open (status={st!r}) "
+                              f"— {c.get('criterion', '')}")
+            elif not str(c.get("resolution", "")).strip():
+                misses.append(f"checklist: check '{c.get('id', '?')}': {st} but no resolution")
+        return misses
+    objs = [
+        Check(id=str(c.get("id", "")), criterion=str(c.get("criterion", "")),
+              status=str(c.get("status", "open")), resolution=str(c.get("resolution", "")))
+        for c in checks
+    ]
+    return [f"checklist: {rsn.message}" for rsn in evaluate_checklist(objs).reasons]
+
+
 def _arm_review(cwd, phase, project):
     """Arm the factory-review gate for `phase` (so finalization can't skip the holistic
-    review). Idempotent: leaves an existing manifest for the same phase untouched."""
+    review). Idempotent: leaves an existing manifest for the same phase untouched.
+
+    Sanctioned skip (stop-sooner lever): when `FACTORY_SKIP_PLAN_REVIEW` is truthy in the env,
+    the plan-review is armed as an explicit, recorded **skip** (status=skipped + forceSkip +
+    reason) instead of `pending` — so an eval / planning-only / quick run isn't forced through the
+    cold-eyes panel. It's deliberate and auditable (the reason lands in the manifest), never silent.
+    """
     path = os.path.join(cwd, ".factory", "review-status.json")
+    _skip = (
+        phase == "plan"
+        and os.environ.get("FACTORY_SKIP_PLAN_REVIEW", "").strip().lower()
+        not in ("", "0", "false", "no")
+    )
     try:
         if os.path.isfile(path):
             with open(path, "r", encoding="utf-8") as fh:
                 if json.load(fh).get("phase") == phase:
                     return
+        man = {"phase": phase, "project": project, "panelRan": False,
+               "findings": [], "size": {}, "attempts": 0, "maxAttempts": 30}
+        if _skip:
+            man.update(status="skipped", forceSkip=True,
+                       skipReason="explicit skip via FACTORY_SKIP_PLAN_REVIEW (eval / planning-only run)")
+        else:
+            man["status"] = "pending"
         with open(path, "w", encoding="utf-8") as fh:
-            json.dump({"phase": phase, "project": project, "status": "pending",
-                       "panelRan": False, "findings": [], "size": {},
-                       "attempts": 0, "maxAttempts": 30}, fh, indent=2)
+            json.dump(man, fh, indent=2)
     except Exception:
         pass
 
@@ -250,6 +301,11 @@ def main() -> None:
                 if not str(gl.get(lens, "")).strip():
                     misses.append(f"{rid}: gap-lens '{lens}' not logged (rigorous mode requires "
                                   f"fire-or-pass for every lens)")
+
+    # 3b) Praxis-sourced planning checklist (DATA-DRIVEN): every check the skill pulled from the
+    # Praxis `planning` checklist and recorded in `manifest.checks` must be closed-with-evidence.
+    # Additive + non-breaking: no `checks` block => no misses (the GAP_LENSES path above still runs).
+    misses.extend(_checklist_misses(man))
 
     if not misses:
         man["status"] = "passed"

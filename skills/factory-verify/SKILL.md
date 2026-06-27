@@ -44,6 +44,7 @@ gate fails the task. Use the project's real commands (discover them; don't assum
 | **Pre-flight** | schema / type-check / lint / AST parse | before trusting an edit |
 | **Tests** | the task's acceptance test(s) + the existing suite | the primary oracle |
 | **Build** | compile / bundle succeeds | for anything that must build |
+| **Bound validation checks** | each check's `meta.run` exit code (0 = pass) | any ticket with checks bound in Praxis (`category="check"`, `scope="validation"`) |
 
 Rules:
 - **The acceptance test must exist and must have failed before the change** (red→green). A test
@@ -52,6 +53,15 @@ Rules:
   pass.
 - **A gate's verdict is its exit code / output, not the agent's interpretation of it.** Capture
   the raw output into the `gate_result` event.
+- **Bound validation checks are blocking, live signals — pulled from Praxis.** The checks live in
+  the validation graph (`category="check"`, `scope="validation"`), each carrying `meta.applies_to`
+  (a requirement id or a class tag like `auth`) and `meta.run` (the command). For the ticket being
+  verified, **pull its applicable checks from Praxis** (via `factory-memory`; bind with
+  `validation_target.resolve_bindings`), **run each check's `meta.run` command, and take its exit
+  code as the verdict** (0 = pass; capture raw output to `gate_result`). The ticket does **not** pass
+  while any bound check fails or has not been run green this build. Never self-judge them. Nothing
+  about *what* is tested is in this skill or any file — the skill only says *how* to pull the checks
+  from Praxis and *how* to run them.
 
 ## 2. Correction loop — fires ONLY on an external signal
 
@@ -98,6 +108,10 @@ feed it back to Praxis: call **`praxis_record_outcome(fact_id, "succeeded"|"fail
 requirement fact (and on any learning the task acted on). Repeated failures sink a fact in
 retrieval; proven facts hold — this is the compounding mechanism, and it's live now (not deferred).
 Only an externally-confirmed pass is eligible to write a learning back (per `factory-memory`).
+
+A ticket is eligible for `record_outcome(fact_id, "succeeded")` **only when its automated gates AND
+every bound validation check are green**; a failing or `unrun` bound check records `"failed"`, which
+regresses the ticket so the build loop re-picks it (the fail→regress→re-pick loop).
 
 ## Never
 - Never mark a task done without a passing external signal (or, for non-coding, human confirmation).
