@@ -2,7 +2,6 @@
 
 > Consolidated design for reframing the agent factory around **data-driven coverage gates**.
 > Companion files: [`01-praxis-changes.md`](01-praxis-changes.md) · [`02-planner.md`](02-planner.md) · [`03-eval-agent.md`](03-eval-agent.md) · [`05-coverage-engine.md`](05-coverage-engine.md) · [`06-validation-harness.md`](06-validation-harness.md).
-> Background design (brownfield framing that this supersedes/simplifies): `../plans/2026-06-26-brownfield-refactor-support-design.md`.
 
 ## Core principle
 Praxis is the foundation. The factory's method is **heavy planning → exhaustive verification → insert the verified plan into Praxis, so that NO decision remains for execution** (execution is a mechanical reducer). Build features so they are ~80% a planning-surface problem.
@@ -47,7 +46,7 @@ Check rigor by kind:
 - **The golden's `derived: true` features are the evidence for what the planning checklist must contain** (e.g. `AUTH-password-reset` being derived ⇒ the checklist needs a "credential-recovery flow" item). The eval and the planning checklist co-design each other.
 
 ## Brownfield = greenfield
-Nothing in the spine cares about existing vs. empty code. A refactor is just a plan whose target acts on existing code; the gates and coding agent don't branch. (See the background plan doc for the fuller brownfield treatment this simplifies.)
+Nothing in the spine cares about existing vs. empty code. A refactor is just a plan whose target acts on existing code; the gates and coding agent don't branch.
 
 ## Closed-loop learning (why this compounds)
 - A fix — *especially of something built wrong the first time* — must persist a **lesson** to Praxis (`category="learning"`, `derived_from` the requirement + failure), promoted to `general-pool` when general. Enforce with a gate (`lesson_gate`).

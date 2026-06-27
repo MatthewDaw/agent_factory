@@ -89,38 +89,3 @@ def emit_gate_result(log: Any, component: str, verdict: Verdict, *, task_id: str
         rule_ids=verdict.rule_ids,
         task_id=task_id,
     )
-
-
-# --- external-signal adapter (contract demonstration only) ---------------------
-
-#: Synthetic rule-IDs the ``verify`` gate would surface, one per external signal.
-#: These prove the contract is not ``plan_gate``-specific; they are *not* wired to a
-#: live verify run in this iteration (KTD4).
-VERIFY_SIGNAL_RULES: dict[str, str] = {
-    "tests": "R-TESTS",
-    "build": "R-BUILD",
-    "lint": "R-LINT",
-    "types": "R-TYPES",
-}
-
-
-def verify_adapter(signals: dict[str, bool]) -> Verdict:
-    """Map external pass/fail signals into a :class:`Verdict` (contract demo, KTD4).
-
-    ``signals`` maps a signal name (``"tests"``, ``"build"``, ``"lint"``, ``"types"``)
-    to True (passed) / False (failed). Each failing signal becomes a :class:`Reason`
-    carrying its synthetic rule-ID (e.g. a failing test -> ``R-TESTS``). The verdict is
-    admitted only when every known signal passed — demonstrating that an
-    external-signal gate conforms to the same ``Gate`` types as ``plan_gate`` without
-    adopting its structured input. This does not run any tests/build/lint itself.
-    """
-    reasons: list[Reason] = []
-    for signal, passed in signals.items():
-        rule_id = VERIFY_SIGNAL_RULES.get(signal)
-        if rule_id is None:
-            raise ValueError(
-                f"unknown verify signal {signal!r}; known: {sorted(VERIFY_SIGNAL_RULES)}"
-            )
-        if not passed:
-            reasons.append(Reason(rule_id=rule_id, message=f"{signal} signal failed"))
-    return Verdict(admitted=not reasons, reasons=reasons)
