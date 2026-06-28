@@ -330,8 +330,14 @@ Only **after the current ticket has shipped end-to-end** (`finished`) do you loo
 **one** next ready ticket (§1), repeating §1→§6 until `next_ready_ticket` returns None and nothing is
 waiting (only `finished` + `blocked` left). One ticket fully done, then the next — never two in flight in
 one session. Independent tickets MAY be fanned out across *separate* parallel sessions/workflows (each still
-one-at-a-time) — the lease makes that safe. *"Are we done?"* is **not** a counter you maintain: the one
-`build_completeness_gate` answers it live against Praxis, blocking until the whole marked set is finished.
+one-at-a-time) — the lease makes that safe. **But a fanned-out worker is a GENERIC sub-agent that does NOT
+read this skill** — it follows only the prompt it is handed, so the EVAL-FIRST / red→green ordering survives
+fan-out only if it travels IN that prompt. Therefore: **spawn EVERY parallel worker with the canonical
+[per-ticket worker contract](#8-the-per-ticket-worker-contract-spawn-every-fanned-out-worker-with-this) (§8)
+verbatim**, one ticket per worker. Do NOT paraphrase the loop into a bespoke worker prompt — copy the
+contract block. (A worker that builds first and tests after is the exact drift this closes; it has happened.)
+*"Are we done?"* is **not** a counter you maintain: the one `build_completeness_gate` answers it live against
+Praxis, blocking until the whole marked set is finished.
 After the panel (below), `clear_run(cids, owner)` to end the run; any ticket left `blocked` is surfaced to
 the human as needing owner action, never silently dropped.
 
@@ -382,6 +388,54 @@ human confirms → record a skip episode. **small + unattended** → auto-skip �
 (`"auto-skip: small/low-risk, unattended"`). **NOT small** → review is mandatory (a human MAY force-skip
 only with an explicit recorded reason). A skip is the *absence* of a panel-ran episode plus the *presence*
 of a skip episode; never fabricate a panel-ran assertion and never edit config to get past the panel.
+
+## 8. The per-ticket worker contract (spawn every fanned-out worker with THIS)
+
+This is the **single canonical, verbatim** statement of the per-ticket loop — the same EVAL-FIRST ordering
+§1–§6 walk, condensed into one self-contained prompt that **travels with a spawned worker**. The §1–§6 prose
+is for *you* (the orchestrator, who read this skill); this block is for the **generic sub-agent** you fan a
+ticket out to, which has not. When fanning out (§7), **spawn each worker with the block below copied
+verbatim**, substituting only `PROJECT` / `TICKET` / `OWNER`. Do not paraphrase it.
+
+The lifecycle calls below are **code-enforced** in `hooks/_ticket_state.py` (per
+`docs/factory-state-contract.md`): `start_ticket` truncates prior evals + pins the resolved requirement
+contract (incl. the acceptance-condition floor), and `release(state="finished")` is **refused** unless
+`all_validations_passed`. The worker **calls** them — it never reinvents or works around them, and never
+fakes a pass.
+
+```text
+You are an af-build per-ticket worker. Build EXACTLY ONE ticket, EVAL-FIRST (red→green). You own only
+this ticket — never look at, claim, or build another. Inputs: PROJECT=<bare name>, TICKET=<cid>,
+OWNER=<your session id>. Run helpers from hooks/_ticket_state.py (contract: docs/factory-state-contract.md).
+af-intake is NOT in this path — it does not author eval requirements at build time; never wait on it.
+
+1. CLAIM + RESOLVE + TRUNCATE  — start_ticket(TICKET, OWNER, PROJECT). This atomically claims the lease,
+   resolves the eval REQUIREMENTS (tag ∪ surface ∪ the ticket's own acceptance-condition floor), TRUNCATES
+   any prior evals, and pins the fresh requirement contract. If it returns None → the ticket is taken/blocked,
+   stop. If it returns an EMPTY list (no checks AND no acceptance condition) → block(TICKET, OWNER, reason)
+   and stop; there is nothing to prove.
+2. READ THE CODE  — read the ticket's acceptance condition and the specific files/surfaces it touches, so
+   your evals fit THIS code case (real paths, real commands) — not generic placeholders. Do not edit yet.
+3. AUTHOR + PIN EVALS  — write CUSTOM executable validations that COVER every resolved requirement (each
+   declares covers:[req_id] and a `run` command whose exit code is the verdict). pin_validations(TICKET, [...]).
+   coverage_gap(TICKET) MUST be empty before you continue.
+4. CONFIRM RED  — run every pinned eval NOW, BEFORE writing any implementation. The acceptance test MUST
+   FAIL (red) for the right reason. An eval that passes before you write code proves nothing — fix it until
+   it genuinely fails. Do NOT write implementation in this step.
+5. BUILD  — only now make the change that satisfies the acceptance condition; nothing broader.
+   heartbeat(TICKET, OWNER) across long stretches so the lease stays live.
+6. CONFIRM GREEN + RECORD  — re-run every pinned eval and the project's real external gates (typecheck /
+   build / lint / suite). record_validation_pass(TICKET, vid, passed=(exit_code==0), ran_at=now) per eval.
+   On a failure, RE-ENTER step 5 with the captured failing signal as context — never revise from self-doubt
+   alone, never weaken an eval to pass.
+7. FINISH  — when all_validations_passed(TICKET) is True: release(TICKET, OWNER, state="finished"). The
+   release is REFUSED while any eval is unrun or red — that refusal is the contract, not an error to route
+   around. To yield without finishing: release(TICKET, OWNER, state="incomplete"). Credential-only /
+   unsatisfiable: block(TICKET, OWNER, reason).
+
+NEVER build-first / test-after. NEVER fake, delete, or weaken an eval to get green. NEVER finish without
+all_validations_passed. NEVER ask af-intake to author the eval requirements.
+```
 
 ## Long-horizon control (so the run survives length)
 
