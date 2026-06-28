@@ -151,6 +151,7 @@ staging store as well as the source of truth. The conceptual shape:
     "surfaces": ["s-today"],          // wireframe screen ids, or ["backend-only"]
     "defines": ["completion"],
     "references": ["daily rep", "ratings", "habit checklist"],
+    "depends_on": [],                 // prerequisite requirement ids that must be FINISHED first (build-order DAG)
     "scope": "mvp",                   // mvp | post-mvp — the TIER tag, not the project
     "citations": ["Brainstorm §3", "Epic D", "wireframe-player.html#s-today"],
     "tags": ["completion", "today-screen"]   // identity tags; check applicability queries these later
@@ -173,6 +174,9 @@ Field rules:
 - **`meta.surfaces`** — wireframe screen ids governed, or `["backend-only"]`. Seeds the `renders`
   bindings written in Step 4.
 - **`meta.defines` / `meta.references`** — concepts, for the H14 dangling-reference gate.
+- **`meta.depends_on`** — prerequisite requirement ids that must be `finished` before this one is
+  buildable (the build-order DAG `af-build`'s `next_ready_ticket` walks). A best-draft now; the DAG is
+  mapped and validated in **Step 5**. Empty for a requirement with no prerequisites.
 - **`meta.scope`** — `"mvp"` or `"post-mvp"` (the tier tag only; NOT the project identity).
 - **`meta.tags`** — identity tags (concepts / surfaces / semantics). A ticket carries identity, **NEVER
   an authored list of its checks**; *which checks apply* is a fresh query (tag ∪ surface ∪ semantic)
@@ -267,8 +271,7 @@ pair. (For the raw-bulk path, the contradiction net is the audit — see the cav
 **d. A human correction is a fact, not an override.** When the human corrects a *factual* claim, admit it
 the same way (`add_insight(..., on_conflict="surface")`) so a correction that is itself wrong, or clashes
 with something settled, *surfaces* and is reconciled rather than silently absorbed. When a correction
-invalidates earlier research, run `praxis_get_stale_derivations` on the affected fact ids and revisit
-what rested on it.
+invalidates earlier research, re-open and re-edit the affected requirements directly.
 
 **Escape hatch:** a requirement the human deliberately owns but can't yet make testable is recorded as an
 **owned-decision** fact (tagged as such), not forced binary — but it cannot pass the done-gate until it
@@ -288,6 +291,33 @@ This edge is the bridge the wireframe→code build step queries: to build a scre
 governing that screen — a per-screen hermetic context (behavior from Praxis, layout from the wireframe
 HTML in git). Rejecting/deleting a requirement drops it from these queries automatically (active-only
 filtering + `ON DELETE CASCADE`); no `meta.surfaces` bookkeeping to sync.
+
+## Step 5 — Map the build-order dependency DAG (`depends_on`)
+
+`af-build` works **one ticket at a time** and only ever pops a ticket whose prerequisites are already
+`finished` (`next_ready_ticket`). That ordering is **not derived at build time** — intake must author it
+now, as a `depends_on` edge set on each requirement, so the build loop has a realizable order to walk.
+
+**Derive each prerequisite from what a requirement actually needs to exist first** — not from authoring
+order or screen layout. The relations that create a genuine build-order dependency:
+- **data producer → consumer** — a feature that reads/aggregates data another feature produces depends on
+  the producer (participation% depends on daily-completion + active-roster; a nightly rollup depends on
+  the write it summarizes).
+- **identity/authz → protected behavior** — anything behind login depends on the auth requirement;
+  authorization depends on authentication.
+- **entity definition → its surfaces** — a screen that renders/edits an entity depends on the requirement
+  that defines that entity's create/store behavior.
+- **shared infra → its first user** — the data store + migrations, the chosen external-service transport
+  (B4), or a base schema a feature relies on.
+
+Set `meta.depends_on = [requirement_id, ...]` on each requirement via `praxis_edit_fact` (or at admit).
+A requirement with no prerequisite keeps `[]`. Reference requirements by their stable `requirement_id`.
+
+**The DAG is VALIDATED, not just authored — it is part of the mechanical gate (B6).** Run the plan gate
+(`agent_factory.plan_gate.evaluate_plan`); its `R-NO-DANGLING-DEP` rule rejects a `depends_on` naming a
+requirement not in the plan, and `R-NO-DEP-CYCLE` rejects a cycle (A needs B needs A) — either of which
+would otherwise become a silent run-time **stall** when `next_ready_ticket` finds nothing claimable. A
+plan does not pass intake with a dangling or circular dependency.
 
 ---
 
@@ -335,12 +365,10 @@ The cold-eyes pass is the **only** dedup/reconcile step for any plan admitted vi
 fast-lane — `raw` deliberately skips Praxis dedup, so reconciliation is the audit's job, and a near-dup
 is **not closed until the graph reflects it**:
 - **redundant / subsumed** → keep the canonical fact and **`praxis_reject_fact`** the loser (drops it
-  from active queries and fires the stale cascade: `praxis_get_stale_derivations` / `praxis_dependents`
-  flag anything built on it). Record *why* + a cross-link, then **re-save the snapshot**.
+  from active queries). Record *why* + a cross-link, then **re-save the snapshot**.
 - **distinct-but-overlapping** → **`praxis_edit_fact`** to NARROW the overlapping fact (strip the
   duplicated clause so it defers to the canonical one; `edit_fact` requires BOTH `title` and `content`).
-  Persist the relationship as a `praxis_record_derivation` edge (or a `references` entry in meta), then
-  re-save the snapshot.
+  Persist the relationship as a `references` entry in meta, then re-save the snapshot.
 - **genuinely distinct / complementary** → no graph change; record the cross-link rationale (an episode)
   so a future reader knows the overlap was considered.
 
@@ -454,9 +482,11 @@ The mechanical half is executable, not eyeballed:
   its `reasons`. The `project=` argument is mandatory: with it the gate requires every requirement's
   `source` to equal `prd-<project>` exactly (the `R-HAS-SOURCE` rule), so a source-less or mis-scoped plan
   is mechanically **rejected** — the drift that went uncaught when the gate ran without project+source. It
-  also checks binary-acceptance present and no-vague-term. Covered by `evals/cases/plan_gate/` (run
-  `pytest tests/test_eval_cases.py`); add a `case.yaml` whenever a fresh gate edge case is found, so the
-  gate's coverage compounds.
+  also checks binary-acceptance present, no-vague-term, no dangling concept reference, and the
+  **build-order DAG** (Step 5): `R-NO-DANGLING-DEP` rejects a `depends_on` naming a requirement not in the
+  plan, and `R-NO-DEP-CYCLE` rejects a dependency cycle — both would otherwise surface only as a run-time
+  stall. Covered by `evals/cases/plan_gate/` (run `pytest tests/test_eval_cases.py`); add a `case.yaml`
+  whenever a fresh gate edge case is found, so the gate's coverage compounds.
 
 ## B7 — The plan-review panel (holistic cold-eyes, the emergent layer)
 
@@ -517,7 +547,6 @@ praxis_record_episode(
          "lenses fired=[...]; near-dups reconciled=[...]; arch decisions written=[...]; "
          "test layers=[...]; tech-decision critic loop-until-dry passes=<k>, missing=[]; "
          "plan panel composition=[...], findings emitted=<m>",
-  derived_from = ["<edited/added requirement ids>", "<check ids>"],
   outcome = "succeeded",
 )
 ```
@@ -641,7 +670,6 @@ incomplete now:
   praxis_record_episode(
     text="Re-armed prd-<project> plan audit: planning checklist extended with check <check_id> (<angle>); prior panel-ran is stale and the audit must reconvene to close the new lens.",
     outcome="pending",
-    derived_from=[<the new check fact id>],
   )
   ```
 
@@ -708,4 +736,4 @@ intake starts from a stricter extractor. A lens that keeps firing on a defect cl
 it into a declarative check via **Amend mode** (validation or planning), so the next plan and the next
 build catch it per-item for free. Before finishing a full intake, also: append new ambiguity patterns to
 the `general-pool` library; offer to **promote** genuinely-new cross-project invariants into the
-`constitution` snapshot; and write decision/derivation records to the event log.
+`constitution` snapshot; and write decision records (episodes) to the event log.

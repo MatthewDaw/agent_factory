@@ -600,20 +600,58 @@ def next_ready_ticket(items: list[dict]) -> Optional[dict]:
     return ready[0] if ready else None
 
 
+# --------------------------------------------------------------------------- acceptance floor
+
+def acceptance_requirement(cid: str, acceptance_text: str) -> dict:
+    """The ticket's OWN binary acceptance condition as a synthetic validation requirement.
+
+    This is the coverage-contract FLOOR. Every build ticket must at minimum prove its acceptance
+    condition, so including it guarantees the resolved contract is never empty. An empty contract is
+    exactly the deadlock this prevents: with zero requirements there is nothing to cover, the worker
+    pins zero validations, and ``all_validations_passed`` can never become True — the ticket can be
+    neither finished nor (without an explicit block) escaped. The floor gives the worker a concrete,
+    always-authorable target: the red→green acceptance test the skill already mandates.
+    """
+    return {"id": f"{cid}::acceptance", "text": str(acceptance_text),
+            "meta": {"acceptance": str(acceptance_text), "synthetic": "acceptance-floor"}}
+
+
+def contract_with_floor(cid: str, acceptance_text: str, resolved: list) -> list:
+    """Compose the coverage contract: the resolved Praxis requirements PLUS the acceptance floor.
+
+    Prepends :func:`acceptance_requirement` (deduped) when the ticket has a non-empty acceptance
+    condition, so a ticket with NO matching Praxis checks still has exactly one thing to validate —
+    its own acceptance — and can therefore be finished. A ticket with neither resolved checks NOR an
+    acceptance condition returns an empty list: a genuine planning defect the build surfaces by
+    ``block()``-ing the ticket (never a silent wedge), since there is nothing it could honestly prove.
+    """
+    reqs = list(resolved)
+    text = str(acceptance_text or "").strip()
+    if text:
+        floor = acceptance_requirement(cid, text)
+        if floor["id"] not in {_check_id(r) for r in reqs}:
+            reqs = [floor] + reqs
+    return reqs
+
+
 # --------------------------------------------------------------------------- start
 
 def start_ticket(cid: str, owner: str, project: str = "",
                  ttl: int = DEFAULT_LEASE_TTL_S) -> Optional[list[dict]]:
-    """Convenience: claim, then resolve the validation REQUIREMENTS and pin them as this pass's
-    coverage contract (truncating any prior synthesized validations).
+    """Convenience: claim, then resolve the validation REQUIREMENTS (PLUS the acceptance-condition
+    floor) and pin them as this pass's coverage contract (truncating any prior synthesized validations).
 
-    Returns the resolved requirement facts the worker must now COVER with synthesized validations
-    (author them, then call :func:`pin_validations`), or None if the claim was lost to another live
-    owner / the ticket is blocked. The ticket does NOT auto-pin validations here — synthesis is the
-    worker's job, and ``all_validations_passed`` stays False until it covers + passes every requirement.
+    Returns the requirement facts the worker must now COVER with synthesized validations — ALWAYS
+    including the ticket's own acceptance condition as a floor (so the contract is never empty and the
+    ticket can never be wedged "no evals therefore un-closeable"), or None if the claim was lost to
+    another live owner / the ticket is blocked. The ticket does NOT auto-pin validations here —
+    synthesis is the worker's job, and ``all_validations_passed`` stays False until it covers + passes
+    every requirement. If the returned list is EMPTY (a ticket with no checks AND no acceptance
+    condition — a planning defect), the worker must ``block()`` it: there is nothing to validate.
     """
     if not claim(cid, owner, ttl=ttl):
         return None
-    requirements = resolve_validation_requirements(cid, project=project, scope="validation")
+    resolved = resolve_validation_requirements(cid, project=project, scope="validation")
+    requirements = contract_with_floor(cid, _meta(cid).get("acceptance"), resolved)
     pin_requirements(cid, requirements)
     return requirements

@@ -79,6 +79,27 @@ EXPECTED_VERDICTS = {
             "R2: missing/!= project source (expected prd-team-app, got '')",
         ],
     },
+    "plan_gate_well_formed_with_deps_admitted": {
+        "admitted": True,
+        "rule_ids": [],
+        "messages": [],
+    },
+    "plan_gate_dangling_dependency_rejected": {
+        "admitted": False,
+        "rule_ids": ["R-NO-DANGLING-DEP"],
+        "messages": [
+            "R2: depends_on 'R7' which is not a requirement in this plan "
+            "(add the prerequisite or fix the edge)",
+        ],
+    },
+    "plan_gate_dependency_cycle_rejected": {
+        "admitted": False,
+        "rule_ids": ["R-NO-DEP-CYCLE"],
+        "messages": [
+            "dependency cycle: R1 -> R2 -> R1 "
+            "(no ticket in the cycle can ever be ready; break it)",
+        ],
+    },
 }
 
 

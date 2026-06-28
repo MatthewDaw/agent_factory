@@ -59,7 +59,7 @@ Check rigor by kind:
 Nothing in the spine cares about existing vs. empty code. A refactor is just a plan whose target acts on existing code; the gates and coding agent don't branch.
 
 ## Closed-loop learning (why this compounds)
-- A fix — *especially of something built wrong the first time* — must persist a **lesson** to Praxis (`category="learning"`, `derived_from` the requirement + failure), promoted to `general-pool` when general. Enforce with a gate (`lesson_gate`).
+- A fix — *especially of something built wrong the first time* — must persist a **lesson** to Praxis (`category="learning"`), promoted to `general-pool` when general. Enforce with a gate (`lesson_gate`).
 - A lesson is **proven by an eval** that reproduces the mistake-prone situation and asserts the fix — across any surface (planning, validation, …). A lesson with no passing eval is "unproven."
 - `factory-fix` is the thin **write path**: fix + PR + add the check/lesson to Praxis.
 

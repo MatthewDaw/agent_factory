@@ -148,6 +148,14 @@ returns the requirement ids not yet covered by any validation — it MUST be emp
 finish. `all_validations_passed` is the single doneness predicate: coverage complete, ≥1 validation, all
 passed. A requirement that cannot be turned into a runnable validation is a `block`, not a fake pass.
 
+**The acceptance-condition floor (no-empty-contract guarantee).** `start_ticket` composes the contract via
+`contract_with_floor`: the resolved checks PLUS the ticket's own binary acceptance condition as a synthetic
+`<cid>::acceptance` requirement. So even when ZERO Praxis checks match, the contract is non-empty and the
+worker has exactly one always-authorable target — the red→green acceptance test — which alone lets the
+ticket finish. This closes the deadlock where "the validation step produced no evals" left a ticket that
+could be neither finished (`all_validations_passed` needs ≥1) nor escaped. Only a ticket with NO checks AND
+no acceptance condition yields an empty contract (a planning defect) → `block()`, never a silent wedge.
+
 ## Public API — `hooks/_praxis.py`
 
 ```python
@@ -179,6 +187,8 @@ DEFAULT_RUN_TTL_S   = 3600    # whole-set run marker (refreshed at each ticket b
 # --- requirements (the QUERY) + the coverage contract ---
 resolve_validation_requirements(ticket, project="", scope=None) -> list[dict]  # alias: resolve_checks
     # scope="validation" (af-build, per-ticket tag∪surface) | "planning" (af-intake, whole checklist) | None
+acceptance_requirement(cid, acceptance_text) -> dict         # the <cid>::acceptance floor requirement
+contract_with_floor(cid, acceptance_text, resolved: list) -> list  # resolved checks + acceptance floor (dedup)
 pin_requirements(cid: str, requirements: list) -> dict       # truncate validations + pin coverage contract
 
 # --- worker-synthesized validations (the eval) ---

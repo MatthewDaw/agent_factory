@@ -154,9 +154,15 @@ This does three things atomically:
    `category="check"` facts whose `meta.applies_to` contains any of the ticket's tags, incl. `"*"`) and
    **surface match** (requirements bound via the `renders` edge to any surface the ticket renders). These
    are abstract *"what must be proven"* facts — declarative and read-only during a build.
-3. **Pin the resolved requirement ids as the coverage contract.** `start_ticket` calls `pin_requirements`,
-   which **TRUNCATES** any prior validations and writes `meta.required_validations` (the requirement ids
-   you must now cover) with an empty `meta.pinned_checks`. Synthesis (§3) fills that in.
+3. **Pin the contract = resolved checks PLUS the acceptance-condition FLOOR.** `start_ticket` calls
+   `contract_with_floor` then `pin_requirements`: it always prepends the ticket's **own binary acceptance
+   condition** (`<cid>::acceptance`) as a requirement, so the contract is **never empty even when zero
+   Praxis checks match**. This is what makes "the validation agent generated no evals" impossible to wedge
+   on: there is always at least one thing to validate — the red→green acceptance test. It **TRUNCATES** any
+   prior validations and writes `meta.required_validations` with an empty `meta.pinned_checks`; synthesis
+   (§3) fills that in. **If `start_ticket` returns an EMPTY list** (a ticket with no checks AND no
+   acceptance condition — a planning defect), there is nothing to honestly prove: `block(cid, owner,
+   reason)` it (surfaced for owner action), never leave it spinning.
 
 ## 3. SYNTHESIZE the validations — convert requirements into a custom covering set
 
@@ -167,11 +173,18 @@ parse, a script) and emit a validation entry `{validation_id, covers: [requireme
 One validation may cover several requirements and several may cover one — what matters is that the **union of
 `covers` equals the full requirement set**. Then `pin_validations(cid, [...])`.
 
+**The contract always includes the `<cid>::acceptance` floor, which is ALWAYS coverable** — it is the
+ticket's own binary acceptance condition, so you author the red→green acceptance test for it (write the
+failing test, watch it fail, make the change, watch it pass). That single validation alone lets the ticket
+finish, so a ticket is never stuck "no evals were generated." Cover the acceptance floor first, then any
+additional resolved checks.
+
 `coverage_gap(cid)` must return `[]` before the ticket can finish: a requirement with no covering validation
-is an **uncovered contract**, not a pass. If a requirement genuinely cannot be turned into any runnable
-signal (it needs a credential/secret only the owner can supply, or it is unsatisfiable as written), do
-**not** fake a covering validation — `block(cid, owner, reason)` the ticket so it is surfaced for owner
-action. Never stub or fake a validation to escape coverage.
+is an **uncovered contract**, not a pass. If an *additional* requirement genuinely cannot be turned into any
+runnable signal (it needs a credential/secret only the owner can supply, or it is unsatisfiable as written),
+do **not** fake a covering validation — `block(cid, owner, reason)` the ticket so it is surfaced for owner
+action. Never stub or fake a validation to escape coverage. (The acceptance floor itself is unsatisfiable
+only if the acceptance condition is — that is a planning defect to `block()`, not to paper over.)
 
 There is **no preflight manifest and no separate env-readiness step.** Environment readiness is just another
 requirement you cover with a validation: a missing env var / unauthenticated CLI / unreachable service is a
@@ -244,8 +257,15 @@ actually observable (discover the commands; don't assume):
   match the implementation proves nothing — if the acceptance condition has no test, write the failing test
   first, watch it fail, then verify the change makes it pass.
 - **Nothing about *what* must be proven lives in this skill or any file** — the validation *requirements*
-  live in Praxis, resolved by query. This skill says only *how* to synthesize covering validations, run
-  them, and record each pass; the requirements themselves are authored upstream (af-intake / af-plan).
+  are resolved by query. This skill says only *how* to synthesize covering validations, run them, and
+  record each pass. **The build NEVER waits on af-intake to author per-ticket eval requirements**, and
+  af-intake must NOT be asked to author them. The contract a ticket resolves is: its **own acceptance
+  condition** (the always-present `<cid>::acceptance` floor — every ticket has one) ∪ any **STANDING
+  general validation lenses** already in Praxis (wildcard `applies_to:"*"` / tag-matched conventions, e.g.
+  a universal typecheck+build+lint gate). A ticket that resolves *only* the floor is **not** a defect and
+  needs **no** amend — you still author a custom eval for its acceptance condition and proceed. (af-intake
+  *amend* exists to add a NEW general lens when one is discovered — a compounding improvement — never as a
+  prerequisite for building an existing ticket.)
 
 **Correction loop — fires ONLY on an external signal.** On a failing gate or pinned validation, re-enter BUILD
 (§4c) with the **captured failing signal** as context. Never let "the model decided to revise" be a
@@ -299,10 +319,9 @@ the owner can pass** (a credential/secret, an unsatisfiable requirement): `block
 sets `build_state="blocked"`, surfaces it for owner action, and removes it from the churn set so the run can
 complete around it rather than wedging forever. **Never fake a validation pass to escape the loop** —
 completeness is outcome-grounded, so the only honest finish is to actually build and pass every covering
-validation. Only an externally-confirmed pass is eligible to **write a learning back**: stamp `source`,
-`category="learning"`, and `derived_from=[the fact ids that grounded it]` (so a flipped basis later
-surfaces it via `praxis_get_stale_derivations`); never write speculative facts and **never block the loop
-on a write** — queue it and proceed.
+validation. Only an externally-confirmed pass is eligible to **write a learning back**: stamp `source` and
+`category="learning"`; never write speculative facts and **never block the loop on a write** — queue it and
+proceed.
 
 ## 7. LOOP, then convene the WORK-review panel
 
@@ -379,10 +398,10 @@ of a skip episode; never fabricate a panel-ran assertion and never edit config t
 ## Decisions are episodes (the why, not just the what)
 
 When the loop makes a non-obvious choice (picked library X; defaulted Y because the plan was silent),
-record it with `praxis_record_episode` — `text` = decision + rationale, `alternatives` = options not taken,
-`derived_from` = the facts it rested on. Episodes are store-only and excluded from semantic recall by
-default, so the "why" compounds without polluting task-grounding retrieval. Flip `outcome` later via
-`praxis_record_outcome` when the decision proves out or fails.
+record it with `praxis_record_episode` — `text` = decision + rationale, `alternatives` = options not taken.
+Episodes are store-only and excluded from semantic recall by default, so the "why" compounds without
+polluting task-grounding retrieval. Flip `outcome` later via `praxis_record_outcome` when the decision
+proves out or fails.
 
 ## Deploy hard-gate
 

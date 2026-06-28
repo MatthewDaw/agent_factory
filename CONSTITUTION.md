@@ -191,8 +191,7 @@ Each pass is one slice of forward progress. Run this checklist top to bottom:
    condition tagged **manual** (af-intake) cannot be confirmed with no human awake — record
    it as a deferred owned decision (`record_episode`) and note it in the ledger for morning review
    rather than self-passing it.
-6. **Compound.** Write back the implementation learning to Praxis with
-   `derived_from=[requirement_id]` (mind the known Augmenter merge bug — see §8). Call
+6. **Compound.** Write back the implementation learning to Praxis (`category="learning"`). Call
    `praxis_record_outcome(requirement_fact_id, "succeeded")` once verified.
 7. **Harden if needed.** If any Praxis/factory failure surfaced during 3–6, run §5 before
    continuing.

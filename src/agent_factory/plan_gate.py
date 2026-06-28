@@ -34,10 +34,12 @@ from agent_factory.gate import Reason, Verdict, register
 # Stable rule-IDs (KTD5). Each emitted reason carries the constant for the rule that
 # produced it, so coverage/harvesting attribute a verdict to a rule by field, not by
 # parsing the message prose. These strings are part of the gate's public contract.
-R_ACCEPT_BINARY = "R-ACCEPT-BINARY"  # every requirement maps to >=1 binary acceptance
-R_NO_VAGUE = "R-NO-VAGUE"            # no unquantified vague term without a threshold
-R_NO_DANGLING = "R-NO-DANGLING"      # every referenced concept is defined or out of scope
-R_HAS_SOURCE = "R-HAS-SOURCE"        # every requirement carries its project source tag
+R_ACCEPT_BINARY = "R-ACCEPT-BINARY"      # every requirement maps to >=1 binary acceptance
+R_NO_VAGUE = "R-NO-VAGUE"                # no unquantified vague term without a threshold
+R_NO_DANGLING = "R-NO-DANGLING"          # every referenced concept is defined or out of scope
+R_HAS_SOURCE = "R-HAS-SOURCE"            # every requirement carries its project source tag
+R_NO_DANGLING_DEP = "R-NO-DANGLING-DEP"  # every depends_on target is a requirement in this plan
+R_NO_DEP_CYCLE = "R-NO-DEP-CYCLE"        # the depends_on graph is acyclic (build order is realizable)
 
 # A requirement's ``source`` must name the project's PRD (``prd-<project>``). When the
 # gate is told the project, the tag must equal ``prd-<project>`` exactly; otherwise it
@@ -82,6 +84,7 @@ class Requirement:
     defines: list[str] = field(default_factory=list)
     references: list[str] = field(default_factory=list)
     source: str = ""
+    depends_on: list[str] = field(default_factory=list)
 
 
 # The gate's decision type is the shared contract :class:`Verdict` (reasons carry a
@@ -96,6 +99,38 @@ def _norm(concept: str) -> str:
 def _vague_terms_in(text: str) -> list[str]:
     low = text.lower()
     return [t for t in VAGUE_TERMS if re.search(rf"\b{re.escape(t)}\b", low)]
+
+
+def _find_dep_cycle(graph: dict[str, list[str]]) -> list[str] | None:
+    """Return one cycle in the ``depends_on`` graph as an id path (``[A, B, A]``), or None if
+    acyclic. Deterministic: nodes and edges are visited in plan order, so the same plan always
+    reports the same cycle. Only edges to known nodes are present (dangling deps are a separate
+    rule), so a cycle here is a genuine unrealizable build order, not a typo.
+    """
+    WHITE, GRAY, BLACK = 0, 1, 2
+    color = {n: WHITE for n in graph}
+    stack: list[str] = []
+
+    def visit(node: str) -> list[str] | None:
+        color[node] = GRAY
+        stack.append(node)
+        for nxt in graph.get(node, []):
+            if color.get(nxt) == GRAY:                  # back-edge into the current path == cycle
+                return stack[stack.index(nxt):] + [nxt]
+            if color.get(nxt, BLACK) == WHITE:
+                found = visit(nxt)
+                if found:
+                    return found
+        color[node] = BLACK
+        stack.pop()
+        return None
+
+    for n in graph:                                     # dict preserves plan order
+        if color[n] == WHITE:
+            found = visit(n)
+            if found:
+                return found
+    return None
 
 
 def evaluate_plan(
@@ -163,6 +198,37 @@ def evaluate_plan(
                     )
                 )
 
+    # --- Dependency-DAG closure (the build-order graph af-build's next_ready_ticket walks). A
+    # depends_on edge naming a requirement not in this plan is unrealizable (the prerequisite can
+    # never finish), and a cycle means no ticket is ever ready — both are stalls the build loop
+    # would otherwise discover only at run time, so the plan gate rejects them up front.
+    req_ids = {r.id for r in requirements}
+    dep_graph: dict[str, list[str]] = {}
+    for r in requirements:
+        present: list[str] = []
+        for dep in r.depends_on:
+            if dep not in req_ids:
+                reasons.append(
+                    Reason(
+                        R_NO_DANGLING_DEP,
+                        f"{r.id}: depends_on '{dep}' which is not a requirement in this plan "
+                        f"(add the prerequisite or fix the edge)",
+                    )
+                )
+            else:
+                present.append(dep)
+        dep_graph[r.id] = present
+
+    cycle = _find_dep_cycle(dep_graph)
+    if cycle:
+        reasons.append(
+            Reason(
+                R_NO_DEP_CYCLE,
+                f"dependency cycle: {' -> '.join(cycle)} "
+                f"(no ticket in the cycle can ever be ready; break it)",
+            )
+        )
+
     return Verdict(admitted=not reasons, reasons=reasons)
 
 
@@ -184,6 +250,7 @@ class PlanGate:
                 defines=r.get("defines", []),
                 references=r.get("references", []),
                 source=r.get("source", ""),
+                depends_on=r.get("depends_on", []),
             )
             for r in input.get("requirements", [])
         ]
